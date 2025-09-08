@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "node src/index.ts",
+    "build": "tsc",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
@@ -16,7 +17,14 @@
   "volta": {
     "node": "24.7.0"
   },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "pdf-parse": "^1.1.1"
+  },
   "devDependencies": {
+    "@types/chokidar": "^2.1.7",
+    "@types/node": "^24.3.1",
+    "@types/pdf-parse": "^1.1.5",
     "@typescript-eslint/eslint-plugin": "^8.42.0",
     "@typescript-eslint/parser": "^8.42.0",
     "eslint": "^9.35.0",
