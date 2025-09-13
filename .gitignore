@@ -163,3 +163,4 @@ build/
 *.d.ts
 
 output/
+images/
