@@ -31,6 +31,7 @@ export type BookMetadata = {
   metadata?: PdfMetadata | EpubMetadata;
   fileStats: FileStats;
   error?: string;
+  imagePath?: string;
 };
 
 export type ProcessingSummary = {

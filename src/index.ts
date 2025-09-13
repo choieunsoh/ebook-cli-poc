@@ -30,7 +30,8 @@ program
   .option('-c, --config <path>', 'path to config file', 'config.json')
   .option('-o, --output <path>', 'output JSON file path', 'output/books.json')
   .option('-a, --all', 'scan and process all files (default: update mode - only process new files)')
-  .option('-y, --yes', 'proceed without confirmation');
+  .option('-y, --yes', 'proceed without confirmation')
+  .option('-l, --limit <number>', 'limit the number of files to process', parseInt);
 
 program.parse();
 
@@ -64,7 +65,10 @@ async function main() {
 
     // Filter out already processed files
     const existingPaths = new Set(existingResults.map((book) => book.path));
-    const filesToProcess = options.all ? files : files.filter((file) => !existingPaths.has(file));
+    let filesToProcess = options.all ? files : files.filter((file) => !existingPaths.has(file));
+    if (options.limit && options.limit > 0) {
+      filesToProcess = filesToProcess.slice(0, options.limit);
+    }
     skippedFiles = files.length - filesToProcess.length;
 
     if (!options.all && skippedFiles > 0) {
@@ -83,6 +87,8 @@ async function main() {
     console.log(`📂 Output file: ${outputPath}`);
 
     // Ask for confirmation unless --yes is used
+    let extractMetadata = true;
+    let extractImage = false;
     if (!options.yes) {
       const rl = createInterface({
         input: process.stdin,
@@ -90,15 +96,29 @@ async function main() {
       });
 
       await new Promise<void>((resolve) => {
-        rl.question('\nDo you want to proceed with processing? (y/N): ', (answer) => {
-          rl.close();
-          if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
-            console.log('Operation cancelled by user.');
-            process.exit(0);
-          }
-          resolve();
-        });
+        rl.question(
+          'Choose extraction mode:\n1. Extract only metadata\n2. Extract metadata and cover image\nEnter 1 or 2: ',
+          (mode) => {
+            rl.close();
+            if (mode === '1') {
+              extractMetadata = true;
+              extractImage = false;
+            } else if (mode === '2') {
+              extractMetadata = true;
+              extractImage = true;
+            } else {
+              console.log('Invalid choice. Defaulting to metadata only.');
+              extractMetadata = true;
+              extractImage = false;
+            }
+            resolve();
+          },
+        );
       });
+    } else {
+      // Default to metadata only when --yes
+      extractMetadata = true;
+      extractImage = false;
     }
 
     // Extract metadata
@@ -110,10 +130,10 @@ async function main() {
       console.log(`Processing: ${file}`);
       let metadata: BookMetadata;
       if (file.toLowerCase().endsWith('.pdf')) {
-        metadata = await extractPdfMetadata(file);
+        metadata = await extractPdfMetadata(file, extractImage, extractMetadata);
         pdfCount++;
       } else if (file.toLowerCase().endsWith('.epub')) {
-        metadata = await extractEpubMetadata(file);
+        metadata = await extractEpubMetadata(file, extractImage, extractMetadata);
         epubCount++;
       } else {
         continue; // shouldn't happen
