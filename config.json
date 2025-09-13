@@ -2,5 +2,8 @@
   "folders": [
     "H:\\E-Books"
   ],
-  "output": "output/books.json"
+  "output": "output/books.json",
+  "excludes": [
+    "H:\\E-Books\\excludes"
+  ]
 }

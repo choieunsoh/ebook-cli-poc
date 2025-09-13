@@ -1,11 +1,11 @@
-export interface FileStats {
+export type FileStats = {
   size: number;
   mtime: Date;
   ctime: Date;
   birthtime: Date;
-}
+};
 
-export interface PdfMetadata {
+export type PdfMetadata = {
   title?: string;
   author?: string;
   subject?: string;
@@ -13,26 +13,27 @@ export interface PdfMetadata {
   producer?: string;
   pages?: number;
   [key: string]: unknown;
-}
+};
 
-export interface EpubMetadata {
+export type EpubMetadata = {
   title?: string;
   creator?: string;
   description?: string;
   language?: string;
   date?: string;
   [key: string]: unknown;
-}
+};
 
-export interface BookMetadata {
+export type BookMetadata = {
   path: string;
   filename: string;
   type: 'pdf' | 'epub';
-  metadata: PdfMetadata | EpubMetadata;
+  metadata?: PdfMetadata | EpubMetadata;
   fileStats: FileStats;
-}
+  error?: string;
+};
 
-export interface ProcessingSummary {
+export type ProcessingSummary = {
   totalFiles: number;
   processedFiles: number;
   skippedFiles: number;
@@ -40,9 +41,15 @@ export interface ProcessingSummary {
   epubFiles: number;
   failedFiles: number;
   mode: 'full-scan' | 'update';
-}
+};
 
-export interface OutputData {
+export type Config = {
+  folders: string[];
+  excludes?: string[];
+  output?: string;
+};
+
+export type OutputData = {
   summary: ProcessingSummary;
   books: BookMetadata[];
-}
+};
