@@ -41,7 +41,7 @@ export type ProcessingSummary = {
   pdfFiles: number;
   epubFiles: number;
   failedFiles: number;
-  mode: 'full-scan' | 'update';
+  mode: 'full-scan' | 'update' | 'update-cover';
 };
 
 export type Config = {

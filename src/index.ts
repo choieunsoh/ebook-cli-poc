@@ -31,7 +31,8 @@ program
   .option('-o, --output <path>', 'output JSON file path', 'output/books.json')
   .option('-a, --all', 'scan and process all files (default: update mode - only process new files)')
   .option('-y, --yes', 'proceed without confirmation')
-  .option('-l, --limit <number>', 'limit the number of files to process', parseInt);
+  .option('-l, --limit <number>', 'limit the number of files to process', parseInt)
+  .option('-m, --mode <number>', 'extraction mode: 1=metadata only, 2=metadata+image, 3=update covers', parseInt);
 
 program.parse();
 
@@ -89,7 +90,27 @@ async function main() {
     // Ask for confirmation unless --yes is used
     let extractMetadata = true;
     let extractImage = false;
-    if (!options.yes) {
+    let updateCoverImages = false;
+    if (options.mode) {
+      if (options.mode === 1) {
+        extractMetadata = true;
+        extractImage = false;
+        updateCoverImages = false;
+      } else if (options.mode === 2) {
+        extractMetadata = true;
+        extractImage = true;
+        updateCoverImages = false;
+      } else if (options.mode === 3) {
+        extractMetadata = false;
+        extractImage = false;
+        updateCoverImages = true;
+      } else {
+        console.log('Invalid mode. Defaulting to metadata only.');
+        extractMetadata = true;
+        extractImage = false;
+        updateCoverImages = false;
+      }
+    } else if (!options.yes) {
       const rl = createInterface({
         input: process.stdin,
         output: process.stdout,
@@ -97,19 +118,26 @@ async function main() {
 
       await new Promise<void>((resolve) => {
         rl.question(
-          'Choose extraction mode:\n1. Extract only metadata\n2. Extract metadata and cover image\nEnter 1 or 2: ',
+          'Choose extraction mode:\n1. Extract only metadata\n2. Extract metadata and cover image\n3. Update cover images for existing books\nEnter 1, 2, or 3: ',
           (mode) => {
             rl.close();
             if (mode === '1') {
               extractMetadata = true;
               extractImage = false;
+              updateCoverImages = false;
             } else if (mode === '2') {
               extractMetadata = true;
               extractImage = true;
+              updateCoverImages = false;
+            } else if (mode === '3') {
+              extractMetadata = false;
+              extractImage = false;
+              updateCoverImages = true;
             } else {
               console.log('Invalid choice. Defaulting to metadata only.');
               extractMetadata = true;
               extractImage = false;
+              updateCoverImages = false;
             }
             resolve();
           },
@@ -119,6 +147,50 @@ async function main() {
       // Default to metadata only when --yes
       extractMetadata = true;
       extractImage = false;
+      updateCoverImages = false;
+    }
+
+    // Handle mode 3: Update cover images
+    if (updateCoverImages) {
+      console.log('Updating cover images for existing books...');
+      try {
+        const existingData = JSON.parse(readFileSync(outputPath, 'utf-8')) as OutputData;
+        const booksToUpdate = existingData.books.filter((book) => !book.imagePath);
+        console.log(`Found ${booksToUpdate.length} books without cover images`);
+
+        let updatedCount = 0;
+        for (const book of booksToUpdate) {
+          console.log(`Updating cover for: ${book.filename}`);
+          try {
+            let updatedBook: BookMetadata;
+            if (book.type === 'pdf') {
+              updatedBook = await extractPdfMetadata(book.path, true, false);
+            } else if (book.type === 'epub') {
+              updatedBook = await extractEpubMetadata(book.path, true, false);
+            } else {
+              continue;
+            }
+
+            if (updatedBook.imagePath) {
+              book.imagePath = updatedBook.imagePath;
+              updatedCount++;
+            }
+          } catch (error) {
+            console.warn(`Failed to update cover for ${book.filename}: ${(error as Error).message}`);
+          }
+        }
+
+        // Update summary
+        existingData.summary.mode = 'update-cover';
+
+        // Save updated data
+        writeFileSync(outputPath, JSON.stringify(existingData, null, 2));
+        console.log(`Updated ${updatedCount} cover images in ${outputPath}`);
+      } catch (error) {
+        console.error(`Error updating cover images: ${(error as Error).message}`);
+        process.exit(1);
+      }
+      return; // Exit after mode 3
     }
 
     // Extract metadata

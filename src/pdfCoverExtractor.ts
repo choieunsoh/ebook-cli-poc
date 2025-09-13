@@ -25,10 +25,10 @@ export async function convertPdfCover(
 
   // Docker command to convert PDF page to image with separate mounts for input and output
   const dockerCommand = `docker run --rm \
-    -v ${inputFolder}:/input \
-    -v ${outputFolder}:/output \
+    -v "${inputFolder}:/input" \
+    -v "${outputFolder}:/output" \
     minidocks/imagemagick \
-    magick -density ${saveOptions.density} "/input/${pdfFileName}[0]" "/output/${saveOptions.saveFilename}.${saveOptions.format}"`;
+    magick -density ${saveOptions.density} "/input/${pdfFileName}"[0] "/output/${saveOptions.saveFilename}.${saveOptions.format}"`;
 
   return new Promise((resolve, reject) => {
     exec(dockerCommand, (error, stdout, stderr) => {
