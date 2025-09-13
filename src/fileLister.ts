@@ -1,10 +1,14 @@
 import { readdirSync, statSync } from 'fs';
-import { extname, join } from 'path';
+import { extname, join, sep } from 'path';
 
-export function listEbookFiles(folders: string[]): string[] {
+export function listEbookFiles(folders: string[], excludes: string[] = []): string[] {
   const ebookFiles: string[] = [];
+  const excludeSet = new Set(excludes.map((ex) => ex.replace(/[/\\]$/, ''))); // normalize, remove trailing sep
 
   function scanDirectory(dirPath: string): void {
+    if (excludeSet.has(dirPath) || excludes.some((ex) => dirPath.startsWith(ex + sep))) {
+      return;
+    }
     try {
       const items = readdirSync(dirPath);
       for (const item of items) {

@@ -4,7 +4,15 @@ import { basename } from 'path';
 import { BookMetadata, EpubMetadata, FileStats } from './types';
 
 export function extractEpubMetadata(filePath: string): Promise<BookMetadata> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
+    const stats = statSync(filePath);
+    const fileStats: FileStats = {
+      size: stats.size,
+      mtime: stats.mtime,
+      ctime: stats.ctime,
+      birthtime: stats.birthtime,
+    };
+
     try {
       const epub = new Epub(filePath);
 
@@ -19,14 +27,6 @@ export function extractEpubMetadata(filePath: string): Promise<BookMetadata> {
           ...meta,
         };
 
-        const stats = statSync(filePath);
-        const fileStats: FileStats = {
-          size: stats.size,
-          mtime: stats.mtime,
-          ctime: stats.ctime,
-          birthtime: stats.birthtime,
-        };
-
         resolve({
           path: filePath,
           filename: basename(filePath),
@@ -37,12 +37,26 @@ export function extractEpubMetadata(filePath: string): Promise<BookMetadata> {
       });
 
       epub.on('error', (error: Error) => {
-        reject(new Error(`Failed to extract EPUB metadata from ${filePath}: ${error.message}`));
+        resolve({
+          path: filePath,
+          filename: basename(filePath),
+          type: 'epub',
+          metadata: undefined,
+          fileStats,
+          error: `Failed to extract EPUB metadata: ${error.message}`,
+        });
       });
 
       epub.parse();
     } catch (error) {
-      reject(new Error(`Failed to initialize EPUB parser for ${filePath}: ${(error as Error).message}`));
+      resolve({
+        path: filePath,
+        filename: basename(filePath),
+        type: 'epub',
+        metadata: undefined,
+        fileStats,
+        error: `Failed to initialize EPUB parser: ${(error as Error).message}`,
+      });
     }
   });
 }

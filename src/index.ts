@@ -5,7 +5,7 @@ import { createInterface } from 'readline';
 import { extractEpubMetadata } from './epubExtractor';
 import { listEbookFiles } from './fileLister';
 import { extractPdfMetadata } from './pdfExtractor';
-import type { BookMetadata, OutputData, ProcessingSummary } from './types';
+import type { BookMetadata, Config, OutputData, ProcessingSummary } from './types';
 
 const program = new Command();
 
@@ -39,13 +39,14 @@ const options = program.opts();
 async function main() {
   try {
     // Read config
-    const config = JSON.parse(readFileSync(options.config, 'utf-8'));
+    const config: Config = JSON.parse(readFileSync(options.config, 'utf-8'));
     const folders: string[] = config.folders;
-    const outputPath: string = options.output || config.output;
+    const excludes: string[] = config.excludes ?? [];
+    const outputPath: string = options.output ?? config.output;
 
     // List ebook files
     console.log('Scanning folders for ebooks...');
-    const files = listEbookFiles(folders);
+    const files = listEbookFiles(folders, excludes);
     console.log(`Found ${files.length} ebook files.`);
 
     // Read existing results if in update mode
@@ -104,23 +105,25 @@ async function main() {
     const newResults: BookMetadata[] = [];
     let pdfCount = 0;
     let epubCount = 0;
+    let failedFiles = 0;
     for (const file of filesToProcess) {
-      try {
-        console.log(`Processing: ${file}`);
-        if (file.toLowerCase().endsWith('.pdf')) {
-          const metadata = await extractPdfMetadata(file);
-          newResults.push(metadata);
-          pdfCount++;
-        } else if (file.toLowerCase().endsWith('.epub')) {
-          const metadata = await extractEpubMetadata(file);
-          newResults.push(metadata);
-          epubCount++;
-        }
-      } catch (error) {
-        const errorMessage = (error as Error).message;
-        console.warn(`Warning: Failed to process ${file}: ${errorMessage}`);
-        logError(`Failed to process: ${errorMessage}`, file);
+      console.log(`Processing: ${file}`);
+      let metadata: BookMetadata;
+      if (file.toLowerCase().endsWith('.pdf')) {
+        metadata = await extractPdfMetadata(file);
+        pdfCount++;
+      } else if (file.toLowerCase().endsWith('.epub')) {
+        metadata = await extractEpubMetadata(file);
+        epubCount++;
+      } else {
+        continue; // shouldn't happen
       }
+      if (metadata.error) {
+        console.warn(`Warning: ${metadata.error}`);
+        logError(metadata.error, file);
+        failedFiles++;
+      }
+      newResults.push(metadata);
     }
 
     // Combine results
@@ -133,7 +136,7 @@ async function main() {
       skippedFiles: skippedFiles,
       pdfFiles: pdfCount,
       epubFiles: epubCount,
-      failedFiles: filesToProcess.length - newResults.length,
+      failedFiles: failedFiles,
       mode: options.all ? 'full-scan' : 'update',
     };
 

@@ -4,6 +4,14 @@ import pdfParse from 'pdf-parse';
 import { BookMetadata, FileStats, PdfMetadata } from './types';
 
 export async function extractPdfMetadata(filePath: string): Promise<BookMetadata> {
+  const stats = statSync(filePath);
+  const fileStats: FileStats = {
+    size: stats.size,
+    mtime: stats.mtime,
+    ctime: stats.ctime,
+    birthtime: stats.birthtime,
+  };
+
   try {
     const buffer = readFileSync(filePath);
     const data = await pdfParse(buffer);
@@ -18,14 +26,6 @@ export async function extractPdfMetadata(filePath: string): Promise<BookMetadata
       ...data.metadata,
     };
 
-    const stats = statSync(filePath);
-    const fileStats: FileStats = {
-      size: stats.size,
-      mtime: stats.mtime,
-      ctime: stats.ctime,
-      birthtime: stats.birthtime,
-    };
-
     return {
       path: filePath,
       filename: basename(filePath),
@@ -34,6 +34,13 @@ export async function extractPdfMetadata(filePath: string): Promise<BookMetadata
       fileStats,
     };
   } catch (error) {
-    throw new Error(`Failed to extract PDF metadata from ${filePath}: ${(error as Error).message}`);
+    return {
+      path: filePath,
+      filename: basename(filePath),
+      type: 'pdf',
+      metadata: undefined,
+      fileStats,
+      error: `Failed to extract PDF metadata: ${(error as Error).message}`,
+    };
   }
 }
