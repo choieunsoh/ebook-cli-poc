@@ -3,6 +3,7 @@
  */
 
 import * as fs from 'fs';
+import inquirer from 'inquirer';
 import * as path from 'path';
 import { extractEpubMetadata } from '../epubExtractor';
 import { extractPDFMetadata, isMetadataComplete } from './pdfMetadataExtractor';
@@ -89,13 +90,7 @@ function collectFilesToProcess(
     const files = getAllFiles(folder, extensions, config.excludes, previousFiles);
     filesToProcess.push(...files);
 
-    // Also count total files without filtering for summary
-    if (previousFiles) {
-      const allFiles = getAllFiles(folder, extensions, config.excludes, null);
-      totalFilesFound += allFiles.length;
-    } else {
-      totalFilesFound += files.length;
-    }
+    totalFilesFound += files.length;
   }
 
   return { filesToProcess, totalFilesFound };
@@ -104,79 +99,138 @@ function collectFilesToProcess(
 /**
  * Processes a batch of files and extracts metadata
  */
-async function processFilesBatch(filesToProcess: FileEntry[], metadataType: string): Promise<ProcessingResult[]> {
-  const results: ProcessingResult[] = [];
-  let processedCount = 0;
+async function* processFilesBatchGenerator(
+  filesToProcess: FileEntry[],
+  metadataType: string,
+  batchSize: number = 10,
+  config: Config,
+  previousResults: ProcessingResult[],
+  overallStartTime: number,
+  sessionTimestamp: string,
+) {
+  const totalBatches = Math.ceil(filesToProcess.length / batchSize);
 
-  for (const entry of filesToProcess) {
-    processedCount++;
-    const filePath = path.join(entry.dir, entry.file);
-    console.log(`\n📖 Processing item ${processedCount}/${filesToProcess.length}: ${entry.file}`);
+  for (let i = 0; i < filesToProcess.length; i += batchSize) {
+    const batch = filesToProcess.slice(i, i + batchSize);
+    const batchStartTime = Date.now();
+    console.log(`\n🔄 Processing batch ${Math.floor(i / batchSize) + 1}/${totalBatches} (${batch.length} files)`);
 
-    // Get file metadata
-    const stats = fs.statSync(filePath);
-    const fileMetadata: FileMetadata = {
-      size: stats.size,
-      created: stats.birthtime,
-      modified: stats.mtime,
-      accessed: stats.atime,
-      path: filePath,
-    };
+    const batchResults: ProcessingResult[] = [];
+    let processedCount = i;
 
-    let metadata: BookMetadata | null = null;
+    for (const entry of batch) {
+      processedCount++;
+      const filePath = path.join(entry.dir, entry.file);
+      console.log(`📖 Processing item ${processedCount}/${filesToProcess.length}: ${entry.file}`);
 
-    if (metadataType !== 'file-metadata') {
-      if (path.extname(entry.file).toLowerCase() === '.pdf') {
-        metadata = await extractPDFMetadata(filePath);
-        if (metadata && isMetadataComplete(metadata)) {
-          console.log(
-            `   ✅ Metadata extracted: ${metadata.title || 'Unknown Title'} by ${metadata.author || 'Unknown Author'}`,
+      // Get file metadata
+      const stats = fs.statSync(filePath);
+      const fileMetadata: FileMetadata = {
+        size: stats.size,
+        created: stats.birthtime,
+        modified: stats.mtime,
+        accessed: stats.atime,
+        path: filePath,
+      };
+
+      let metadata: BookMetadata | null = null;
+
+      if (metadataType !== 'file-metadata') {
+        if (path.extname(entry.file).toLowerCase() === '.pdf') {
+          const timeoutPromise = new Promise<BookMetadata | null>(
+            (resolve) => setTimeout(() => resolve(null), 60000), // 60 second timeout
           );
-        } else {
-          console.log(`   ⚠️  Failed to extract metadata.`);
-        }
-      } else if (path.extname(entry.file).toLowerCase() === '.epub') {
-        try {
-          const epubResult = await extractEpubMetadata(filePath, metadataType === 'metadata+cover');
-          if (epubResult.metadata) {
-            metadata = epubResult.metadata;
-            console.log(
-              `   ✅ Metadata extracted: ${metadata.title || 'Unknown Title'} by ${(metadata as EPUBMetadata).creator || 'Unknown Creator'}`,
-            );
-            if (epubResult.imagePath) {
-              console.log(`   🖼️  Cover image extracted: ${epubResult.imagePath}`);
+          try {
+            metadata = await Promise.race([extractPDFMetadata(filePath), timeoutPromise]);
+            if (metadata && isMetadataComplete(metadata)) {
+              console.log(
+                `   ✅ Metadata extracted: ${metadata.title || 'Unknown Title'} by ${metadata.author || 'Unknown Author'}`,
+              );
+            } else {
+              console.log(`   ⚠️  Failed to extract metadata or timed out.`);
             }
-          } else {
-            console.log(`   ⚠️  Failed to extract metadata.`);
-            if (epubResult.error) {
-              console.log(`      Error: ${epubResult.error}`);
-            }
+          } catch (error) {
+            console.log(`   ❌ Error processing PDF: ${(error as Error).message}`);
+            metadata = null;
           }
-        } catch (error) {
-          console.log(`   ❌ Error processing EPUB: ${(error as Error).message}`);
+        } else if (path.extname(entry.file).toLowerCase() === '.epub') {
+          const timeoutPromise = new Promise<{ metadata: BookMetadata | null; imagePath?: string; error?: string }>(
+            (resolve) => setTimeout(() => resolve({ metadata: null, error: 'Timeout' }), 60000), // 60 second timeout
+          );
+          try {
+            const epubResult = await Promise.race([
+              extractEpubMetadata(filePath, metadataType === 'metadata+cover'),
+              timeoutPromise,
+            ]);
+            if (epubResult.metadata) {
+              metadata = epubResult.metadata;
+              console.log(
+                `   ✅ Metadata extracted: ${metadata.title || 'Unknown Title'} by ${(metadata as EPUBMetadata).creator || 'Unknown Creator'}`,
+              );
+              if (epubResult.imagePath) {
+                console.log(`   🖼️  Cover image extracted: ${epubResult.imagePath}`);
+              }
+            } else {
+              console.log(`   ⚠️  Failed to extract metadata or timed out.`);
+              if (epubResult.error) {
+                console.log(`      Error: ${epubResult.error}`);
+              }
+            }
+          } catch (error) {
+            console.log(`   ❌ Error processing EPUB: ${(error as Error).message}`);
+          }
         }
+      } else {
+        console.log(`   📄 File metadata extracted (ebook metadata skipped)`);
       }
-    } else {
-      console.log(`   📄 File metadata extracted (ebook metadata skipped)`);
+
+      const result: ProcessingResult = {
+        file: entry.file,
+        type: path.extname(entry.file).toLowerCase() === '.pdf' ? 'pdf' : 'epub',
+        fileMetadata,
+        metadata,
+      };
+
+      batchResults.push(result);
     }
 
-    results.push({
-      file: entry.file,
-      type: path.extname(entry.file).toLowerCase() === '.pdf' ? 'pdf' : 'epub',
-      fileMetadata,
-      metadata,
-    });
-  }
+    // Save batch results incrementally
+    const currentResults = [...previousResults, ...batchResults];
+    const batchNumber = Math.floor(i / batchSize) + 1;
+    saveBatchResults(batchResults, currentResults, config, batchNumber, sessionTimestamp);
 
-  return results;
+    // Show batch summary
+    generateBatchSummary(
+      batchResults,
+      batchNumber,
+      totalBatches,
+      batchStartTime,
+      overallStartTime,
+      filesToProcess.length,
+    );
+
+    yield batchResults;
+  }
 }
 
 /**
  * Saves processing results to multiple output files
  */
 function saveResults(results: ProcessingResult[], previousResults: ProcessingResult[], config: Config): void {
-  // Append current results to previous results for cumulative data
-  previousResults.push(...results);
+  // Deduplicate results based on file path
+  const uniqueResultsMap = new Map<string, ProcessingResult>();
+
+  // Add previous results first
+  for (const result of previousResults) {
+    uniqueResultsMap.set(result.fileMetadata.path, result);
+  }
+
+  // Add new results, overwriting if path already exists
+  for (const result of results) {
+    uniqueResultsMap.set(result.fileMetadata.path, result);
+  }
+
+  const uniqueResults = Array.from(uniqueResultsMap.values());
 
   // Save results to configured output path with timestamp
   const now = new Date();
@@ -187,14 +241,14 @@ function saveResults(results: ProcessingResult[], previousResults: ProcessingRes
     config.output.replace(/\.json$/, `-${timestamp}.json`),
   );
   fs.mkdirSync(path.dirname(outputWithTimestampPath), { recursive: true });
-  fs.writeFileSync(outputWithTimestampPath, JSON.stringify(results, null, 2));
-  console.log(`\n💾 Results saved to ${outputWithTimestampPath}`);
+  fs.writeFileSync(outputWithTimestampPath, JSON.stringify(uniqueResults, null, 2));
+  console.log(`\n💾 Final results saved to ${outputWithTimestampPath}`);
 
   // Save to base output path
   const baseOutputPath = path.join(process.cwd(), config.outputDir, config.output);
   fs.mkdirSync(path.dirname(baseOutputPath), { recursive: true });
-  fs.writeFileSync(baseOutputPath, JSON.stringify(results, null, 2));
-  console.log(`💾 Results saved to ${baseOutputPath}`);
+  fs.writeFileSync(baseOutputPath, JSON.stringify(uniqueResults, null, 2));
+  console.log(`💾 Final results saved to ${baseOutputPath}`);
 
   // Create timestamped backup in backup folder
   const dataPath = path.join(process.cwd(), config.outputDir, 'data.json');
@@ -204,12 +258,107 @@ function saveResults(results: ProcessingResult[], previousResults: ProcessingRes
     const backupTimestamp = formatTimestamp(now, 'YYYYMMDDHHmmss');
     const backupPath = path.join(backupDir, `data-${backupTimestamp}.json`);
     fs.copyFileSync(dataPath, backupPath);
-    console.log(`💾 Backup created: ${backupPath}`);
+    console.log(`💾 Final backup created: ${backupPath}`);
+  }
+}
+
+/**
+ * Saves batch results incrementally during processing
+ */
+function saveBatchResults(
+  batchResults: ProcessingResult[],
+  currentResults: ProcessingResult[],
+  config: Config,
+  batchNumber: number,
+  sessionTimestamp: string,
+): void {
+  // Save current cumulative results to data.json for incremental updates
+  const dataPath = path.join(process.cwd(), config.outputDir, 'data.json');
+  fs.mkdirSync(path.dirname(dataPath), { recursive: true });
+  fs.writeFileSync(dataPath, JSON.stringify(currentResults, null, 2));
+
+  // Save individual batch results to timestamped batches subfolder
+  const batchFileName = `batch-${batchNumber.toString().padStart(3, '0')}.json`;
+  const batchSubfolder = path.join(process.cwd(), config.outputDir, `batches-${sessionTimestamp}`);
+  const batchFilePath = path.join(batchSubfolder, batchFileName);
+  fs.mkdirSync(batchSubfolder, { recursive: true });
+  fs.writeFileSync(batchFilePath, JSON.stringify(batchResults, null, 2));
+
+  console.log(`💾 Batch results saved incrementally (${batchResults.length} files)`);
+  console.log(`💾 Batch ${batchNumber} saved to batches-${sessionTimestamp}/${batchFileName}`);
+}
+
+/**
+ * Generates a summary for a single batch of processing results
+ */
+function generateBatchSummary(
+  batchResults: ProcessingResult[],
+  batchNumber: number,
+  totalBatches: number,
+  startTime: number,
+  overallStartTime: number,
+  totalFiles: number,
+): void {
+  const processedFiles = batchResults.length;
+  const successfulExtractions = batchResults.filter((r) => r.metadata !== null).length;
+  const failedExtractions = processedFiles - successfulExtractions;
+  const pdfFiles = batchResults.filter((r) => r.type === 'pdf').length;
+  const epubFiles = batchResults.filter((r) => r.type === 'epub').length;
+  const totalSize = batchResults.reduce((sum, r) => sum + r.fileMetadata.size, 0);
+  const batchProcessingTime = Date.now() - startTime;
+  const overallProcessingTime = Date.now() - overallStartTime;
+
+  // Calculate progress and estimates
+  const filesProcessedSoFar = (batchNumber - 1) * processedFiles + processedFiles;
+  const progressPercent = (filesProcessedSoFar / totalFiles) * 100;
+  const avgTimePerFile = overallProcessingTime / filesProcessedSoFar;
+  const remainingFiles = totalFiles - filesProcessedSoFar;
+  const estimatedRemainingTime = remainingFiles * avgTimePerFile;
+  const estimatedCompletion = new Date(Date.now() + estimatedRemainingTime);
+
+  console.log(`\n📦 Batch ${batchNumber}/${totalBatches} Summary`);
+  console.log('=====================================');
+  console.log(`📁 Files in batch: ${processedFiles.toLocaleString()}`);
+  console.log(`📄 PDF files: ${pdfFiles.toLocaleString()}`);
+  console.log(`📖 EPUB files: ${epubFiles.toLocaleString()}`);
+  console.log(`🎯 Successful extractions: ${successfulExtractions.toLocaleString()}`);
+  console.log(`❌ Failed extractions: ${failedExtractions.toLocaleString()}`);
+  console.log(`💾 Batch size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+  console.log(`⏱️  Batch processing time: ${formatDuration(batchProcessingTime)}`);
+
+  if (processedFiles > 0) {
+    const successRate = ((successfulExtractions / processedFiles) * 100).toFixed(1);
+    console.log(`📈 Batch success rate: ${successRate}%`);
   }
 
-  // Save cumulative data to data.json for incremental updates
-  fs.writeFileSync(dataPath, JSON.stringify(previousResults, null, 2));
-  console.log(`💾 Incremental data saved to ${dataPath}`);
+  // Progress and time estimates
+  console.log(
+    `\n📊 Progress: ${progressPercent.toFixed(1)}% (${filesProcessedSoFar.toLocaleString()}/${totalFiles.toLocaleString()} files)`,
+  );
+  console.log(`⏱️  Elapsed time: ${formatDuration(overallProcessingTime)}`);
+  console.log(`⏳ Estimated remaining: ${formatDuration(estimatedRemainingTime)}`);
+  console.log(`🎯 Estimated completion: ${estimatedCompletion.toLocaleString()}`);
+}
+
+/**
+ * Formats milliseconds into a human-readable duration string
+ */
+function formatDuration(milliseconds: number): string {
+  if (milliseconds < 1000) {
+    return `${milliseconds}ms`;
+  }
+
+  const seconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  if (hours > 0) {
+    return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`;
+  } else {
+    return `${seconds}s`;
+  }
 }
 
 /**
@@ -267,7 +416,7 @@ function displayProcessingSummary(summary: ProcessingSummary): void {
   console.log(`❌ Failed extractions: ${summary.failedExtractions.toLocaleString()}`);
   console.log(`💾 Total size: ${(summary.totalSize / 1024 / 1024).toFixed(2)} MB`);
   console.log(`📏 Average file size: ${(summary.averageFileSize / 1024 / 1024).toFixed(2)} MB`);
-  console.log(`⏱️  Processing time: ${summary.processingTime}ms`);
+  console.log(`⏱️  Total processing time: ${formatDuration(summary.processingTime)}`);
 
   if (summary.processedFiles > 0) {
     const successRate = ((summary.successfulExtractions / summary.processedFiles) * 100).toFixed(1);
@@ -278,9 +427,31 @@ function displayProcessingSummary(summary: ProcessingSummary): void {
   console.log('\n⚡ Performance Statistics');
   console.log('========================');
   console.log(`🚀 Files per second: ${summary.filesPerSecond.toFixed(2)}`);
-  console.log(`⏱️  Average time per file: ${summary.averageTimePerFile.toFixed(2)}ms`);
+  console.log(`⏱️  Average time per file: ${formatDuration(summary.averageTimePerFile)}`);
   console.log(`💾 Data processed: ${(summary.totalDataProcessed / 1024 / 1024).toFixed(2)} MB`);
   console.log(`📊 Data throughput: ${(summary.dataThroughput / 1024 / 1024).toFixed(2)} MB/s`);
+
+  // Time breakdown
+  console.log('\n⏰ Time Processing Summary');
+  console.log('==========================');
+  const processingTimeFormatted = formatDuration(summary.processingTime);
+  const scanningTime = summary.processingTime * 0.1; // Rough estimate: 10% for scanning
+  const processingTimePerFile = summary.averageTimePerFile;
+  const savingTime = summary.processingTime * 0.05; // Rough estimate: 5% for saving
+
+  console.log(`🔍 File scanning: ~${formatDuration(scanningTime)} (estimated)`);
+  console.log(
+    `📖 Metadata extraction: ~${formatDuration(summary.processingTime - scanningTime - savingTime)} (${summary.processedFiles} files)`,
+  );
+  console.log(`💾 File saving: ~${formatDuration(savingTime)} (estimated)`);
+  console.log(`📊 Total elapsed: ${processingTimeFormatted}`);
+
+  if (summary.processedFiles > 0) {
+    console.log(`\n📈 Per-File Breakdown:`);
+    console.log(`   Average extraction time: ${formatDuration(processingTimePerFile)}`);
+    console.log(`   Fastest expected: ${formatDuration(processingTimePerFile * 0.5)} (estimated)`);
+    console.log(`   Slowest expected: ${formatDuration(processingTimePerFile * 2)} (estimated)`);
+  }
 }
 
 /**
@@ -364,9 +535,6 @@ export async function processFiles(choices: UserChoices) {
   const previousResults = choices.updateType === 'diff' ? loadPreviousData(config) : [];
   const previousFiles = choices.updateType === 'diff' ? createPreviousFilesMap(previousResults) : null;
 
-  // Development limit for processing files
-  const LIMIT = 100;
-
   // Determine file extensions and collect files to process
   const extensions = determineExtensions(choices);
   const { filesToProcess, totalFilesFound } = collectFilesToProcess(config, extensions, previousFiles);
@@ -376,8 +544,28 @@ export async function processFiles(choices: UserChoices) {
     return;
   }
 
+  console.log(`📁 Found ${previousResults.length} previously processed file(s).`);
   console.log(`📁 Found ${filesToProcess.length} file(s) to process.`);
-  console.log(`📁 Processing up to ${LIMIT} file(s).`);
+  console.log(
+    `📁 Processing all files in batches of ${choices.batchSize}, total of ${Math.ceil(filesToProcess.length / choices.batchSize)} ${Math.ceil(filesToProcess.length / choices.batchSize) === 1 ? 'batch' : 'batches'}.`,
+  );
+
+  // Ask for confirmation before proceeding with processing
+  const confirmationAnswer = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'proceed',
+      message: 'Do you want to proceed with processing these files?',
+      default: true,
+    },
+  ]);
+
+  if (!confirmationAnswer.proceed) {
+    console.log('\n❌ Processing cancelled by user.');
+    return;
+  }
+
+  console.log('\n🚀 Starting processing...\n');
 
   // If file-metadata only, save file list and skip processing
   if (choices.metadataType === 'file-metadata') {
@@ -392,17 +580,31 @@ export async function processFiles(choices: UserChoices) {
     return;
   }
 
-  // Track processing start time
-  const startTime = Date.now();
+  // Track overall processing start time and session timestamp
+  const overallStartTime = Date.now();
+  const sessionTimestamp = formatTimestamp(new Date(overallStartTime), config.timestampFormat);
 
-  // Process files and save results
-  const results = await processFilesBatch(filesToProcess.slice(0, LIMIT), choices.metadataType);
-  saveResults(results, previousResults, config);
+  // Process all files in batches using the generator
+  const allResults: ProcessingResult[] = [];
+  for await (const batchResults of processFilesBatchGenerator(
+    filesToProcess,
+    choices.metadataType,
+    choices.batchSize,
+    config,
+    previousResults,
+    overallStartTime,
+    sessionTimestamp,
+  )) {
+    allResults.push(...batchResults);
+  }
+
+  // Final save of all results (this will create the timestamped files and backups)
+  saveResults(allResults, previousResults, config);
 
   // Calculate skipped files (for incremental updates)
   const skippedFiles = choices.updateType === 'diff' ? totalFilesFound - filesToProcess.length : 0;
 
   // Generate and display summary
-  const summary = generateProcessingSummary(results, totalFilesFound, skippedFiles, startTime);
+  const summary = generateProcessingSummary(allResults, totalFilesFound, skippedFiles, overallStartTime);
   displayProcessingSummary(summary);
 }

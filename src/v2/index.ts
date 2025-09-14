@@ -76,16 +76,16 @@ async function askFileType(): Promise<'both' | 'pdf' | 'epub'> {
 async function askMetadataType(): Promise<'file-metadata' | 'metadata' | 'metadata+cover'> {
   const metadataTypeChoices = [
     {
-      name: 'File metadata only (size, dates, path)',
-      value: 'file-metadata' as const,
-    },
-    {
       name: 'Ebook metadata only (title, author, description, etc.)',
       value: 'metadata' as const,
     },
     {
       name: 'Ebook metadata and cover images',
       value: 'metadata+cover' as const,
+    },
+    {
+      name: 'File metadata only (size, dates, path)',
+      value: 'file-metadata' as const,
     },
   ];
 
@@ -102,6 +102,33 @@ async function askMetadataType(): Promise<'file-metadata' | 'metadata' | 'metada
 }
 
 /**
+ * Prompts user to enter the batch size for processing.
+ * @returns Promise resolving to the chosen batch size
+ */
+async function askBatchSize(): Promise<number> {
+  const answer = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'batchSize',
+      message: 'Enter the number of files to process in each batch:',
+      default: '10',
+      validate: (input: string) => {
+        const num = Number(input);
+        if (isNaN(num) || num <= 0) {
+          return 'Batch size must be a positive number';
+        }
+        if (num > 100) {
+          return 'Batch size should not exceed 100 for performance reasons';
+        }
+        return true;
+      },
+    },
+  ]);
+
+  return Number(answer.batchSize);
+}
+
+/**
  * Orchestrates the complete user interaction flow.
  * Asks all configuration questions in sequence.
  * @returns Promise resolving to complete user choices object
@@ -110,11 +137,13 @@ async function getUserChoice(): Promise<UserChoices> {
   const updateType = await askUpdateType();
   const fileType = await askFileType();
   const metadataType = await askMetadataType();
+  const batchSize = await askBatchSize();
 
   return {
     updateType,
     fileType,
     metadataType,
+    batchSize,
   };
 }
 
@@ -172,10 +201,12 @@ async function main() {
     console.log(`Update Type: ${updateTypeDisplay}`);
     console.log(`File Types: ${fileTypeDisplay}`);
     console.log(`Extraction: ${metadataTypeDisplay}`);
+    console.log(`Batch Size: ${choices.batchSize} files per batch`);
     console.log('\n📋 Technical Values:');
     console.log(`   updateType: '${choices.updateType}'`);
     console.log(`   fileType: '${choices.fileType}'`);
     console.log(`   metadataType: '${choices.metadataType}'`);
+    console.log(`   batchSize: ${choices.batchSize}`);
 
     // Process the files
     await processFiles(choices);

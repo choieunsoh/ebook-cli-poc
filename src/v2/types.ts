@@ -12,6 +12,8 @@ export type UserChoices = {
   fileType: 'both' | 'pdf' | 'epub';
   /** Metadata extraction scope: 'file-metadata', 'metadata' only, or 'metadata+cover' for images too */
   metadataType: 'file-metadata' | 'metadata' | 'metadata+cover';
+  /** Number of files to process in each batch */
+  batchSize: number;
 };
 
 /**
