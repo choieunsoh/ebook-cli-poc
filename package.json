@@ -6,7 +6,7 @@
     "dev": "node src/index.ts",
     "build": "tsc",
     "start": "yarn build && node dist/index.js",
-    "v2": "yarn build && node dist/v2/index.js",
+    "v2": "node dist/v2/index.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
