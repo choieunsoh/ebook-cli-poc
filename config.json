@@ -1,9 +1,11 @@
 {
-  "folders": [
+  "includes": [
     "H:\\E-Books"
   ],
-  "output": "output/books.json",
+  "outputDir": "output",
+  "output": "books.json",
   "excludes": [
     "H:\\E-Books\\excludes"
-  ]
+  ],
+  "timestampFormat": "YYYY-MM-DD_HH-mm-ss"
 }
