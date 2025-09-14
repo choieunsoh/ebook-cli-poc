@@ -4,12 +4,14 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { extractEpubMetadata } from '../epubExtractor';
 import { extractPDFMetadata, isMetadataComplete } from './pdfMetadataExtractor';
 import type {
+  BookMetadata,
   Config,
+  EPUBMetadata,
   FileEntry,
   FileMetadata,
-  PDFMetadata,
   ProcessingResult,
   ProcessingSummary,
   UserChoices,
@@ -121,7 +123,7 @@ async function processFilesBatch(filesToProcess: FileEntry[], metadataType: stri
       path: filePath,
     };
 
-    let metadata: PDFMetadata | null = null;
+    let metadata: BookMetadata | null = null;
 
     if (metadataType !== 'file-metadata') {
       if (path.extname(entry.file).toLowerCase() === '.pdf') {
@@ -134,8 +136,25 @@ async function processFilesBatch(filesToProcess: FileEntry[], metadataType: stri
           console.log(`   ⚠️  Failed to extract metadata.`);
         }
       } else if (path.extname(entry.file).toLowerCase() === '.epub') {
-        // TODO: Implement EPUB metadata extraction
-        console.log(`   📝 EPUB processing not yet implemented.`);
+        try {
+          const epubResult = await extractEpubMetadata(filePath, metadataType === 'metadata+cover');
+          if (epubResult.metadata) {
+            metadata = epubResult.metadata;
+            console.log(
+              `   ✅ Metadata extracted: ${metadata.title || 'Unknown Title'} by ${(metadata as EPUBMetadata).creator || 'Unknown Creator'}`,
+            );
+            if (epubResult.imagePath) {
+              console.log(`   🖼️  Cover image extracted: ${epubResult.imagePath}`);
+            }
+          } else {
+            console.log(`   ⚠️  Failed to extract metadata.`);
+            if (epubResult.error) {
+              console.log(`      Error: ${epubResult.error}`);
+            }
+          }
+        } catch (error) {
+          console.log(`   ❌ Error processing EPUB: ${(error as Error).message}`);
+        }
       }
     } else {
       console.log(`   📄 File metadata extracted (ebook metadata skipped)`);

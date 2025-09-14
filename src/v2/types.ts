@@ -34,6 +34,23 @@ export type PDFMetadata = {
 };
 
 /**
+ * Represents the extracted EPUB metadata.
+ */
+export type EPUBMetadata = {
+  title?: string;
+  creator?: string;
+  description?: string;
+  language?: string;
+  date?: string;
+  [key: string]: unknown;
+};
+
+/**
+ * Unified metadata type for both PDF and EPUB files.
+ */
+export type BookMetadata = PDFMetadata | EPUBMetadata;
+
+/**
  * Represents basic file metadata.
  */
 export type FileMetadata = {
@@ -70,7 +87,7 @@ export type ProcessingResult = {
   file: string;
   type: string;
   fileMetadata: FileMetadata;
-  metadata: PDFMetadata | null;
+  metadata: BookMetadata | null;
 };
 
 /**
