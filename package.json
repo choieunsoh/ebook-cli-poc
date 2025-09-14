@@ -30,6 +30,7 @@
     "figlet": "^1.9.1",
     "inquirer": "^12.9.4",
     "pdf-parse": "^1.1.1",
+    "pdf2json": "^3.2.1",
     "sharp": "^0.34.3"
   },
   "devDependencies": {

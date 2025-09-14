@@ -1239,6 +1239,7 @@ __metadata:
     globals: "npm:^16.3.0"
     inquirer: "npm:^12.9.4"
     pdf-parse: "npm:^1.1.1"
+    pdf2json: "npm:^3.2.1"
     prettier: "npm:^3.6.2"
     sharp: "npm:^0.34.3"
     typescript: "npm:^5.9.2"
@@ -2460,6 +2461,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pdf2json@npm:^3.2.1":
+  version: 3.2.1
+  resolution: "pdf2json@npm:3.2.1"
+  dependencies:
+    user: "npm:^0.0.0"
+  bin:
+    pdf2json: bin/pdf2json.js
+  checksum: 10c0/187fe272d66b511bd809e7e4115b6bba190e0d77bbad8f25a2b61b0890d9a76c327085aa44eb82ed685ecf735b257086afacd8654358bdbaa473409a82632a87
+  languageName: node
+  linkType: hard
+
 "picomatch@npm:^2.3.1":
   version: 2.3.1
   resolution: "picomatch@npm:2.3.1"
@@ -3051,6 +3063,13 @@ __metadata:
   dependencies:
     punycode: "npm:^2.1.0"
   checksum: 10c0/4ef57b45aa820d7ac6496e9208559986c665e49447cb072744c13b66925a362d96dd5a46c4530a6b8e203e5db5fe849369444440cb22ecfc26c679359e5dfa3c
+  languageName: node
+  linkType: hard
+
+"user@npm:^0.0.0":
+  version: 0.0.0
+  resolution: "user@npm:0.0.0"
+  checksum: 10c0/02ded4d1d9390b346195385a22492811d8143335b90d0bc3c91e00bd002fef13c1609528ca8772ca096407bf2f388dd81bb5eebe8d16e6674b95c981beebf8cc
   languageName: node
   linkType: hard
 
