@@ -32,7 +32,11 @@ program
   .option('-a, --all', 'scan and process all files (default: update mode - only process new files)')
   .option('-y, --yes', 'proceed without confirmation')
   .option('-l, --limit <number>', 'limit the number of files to process', parseInt)
-  .option('-m, --mode <number>', 'extraction mode: 1=metadata only, 2=metadata+image, 3=update covers', parseInt);
+  .option(
+    '-m, --mode <number>',
+    'extraction mode: 1=metadata only, 2=metadata+image, 3=update covers, 4=search by keyword',
+    parseInt,
+  );
 
 program.parse();
 
@@ -104,6 +108,14 @@ async function main() {
         extractMetadata = false;
         extractImage = false;
         updateCoverImages = true;
+      } else if (options.mode === 4) {
+        if (!options.keyword) {
+          console.error('Mode 4 requires a keyword. Please use interactive mode to choose mode 4.');
+          process.exit(1);
+        }
+        extractMetadata = false;
+        extractImage = false;
+        updateCoverImages = false;
       } else {
         console.log('Invalid mode. Defaulting to metadata only.');
         extractMetadata = true;
@@ -118,28 +130,43 @@ async function main() {
 
       await new Promise<void>((resolve) => {
         rl.question(
-          'Choose extraction mode:\n1. Extract only metadata\n2. Extract metadata and cover image\n3. Update cover images for existing books\nEnter 1, 2, or 3: ',
+          'Choose extraction mode:\n1. Extract only metadata\n2. Extract metadata and cover image\n3. Update cover images for existing books\n4. Search books by keyword in filename\nEnter 1, 2, 3, or 4: ',
           (mode) => {
-            rl.close();
             if (mode === '1') {
               extractMetadata = true;
               extractImage = false;
               updateCoverImages = false;
+              rl.close();
+              resolve();
             } else if (mode === '2') {
               extractMetadata = true;
               extractImage = true;
               updateCoverImages = false;
+              rl.close();
+              resolve();
             } else if (mode === '3') {
               extractMetadata = false;
               extractImage = false;
               updateCoverImages = true;
+              rl.close();
+              resolve();
+            } else if (mode === '4') {
+              rl.question('Enter search keyword: ', (keyword) => {
+                options.keyword = keyword.trim();
+                extractMetadata = false;
+                extractImage = false;
+                updateCoverImages = false;
+                rl.close();
+                resolve();
+              });
             } else {
               console.log('Invalid choice. Defaulting to metadata only.');
               extractMetadata = true;
               extractImage = false;
               updateCoverImages = false;
+              rl.close();
+              resolve();
             }
-            resolve();
           },
         );
       });
@@ -193,6 +220,50 @@ async function main() {
       return; // Exit after mode 3
     }
 
+    // Handle mode 4: Search by keyword in filename
+    if (options.mode === 4) {
+      console.log(`Searching for books with filename containing "${options.keyword}"...`);
+      try {
+        const fullDbPath = 'output/full-books.json';
+        let dbPath = outputPath;
+        try {
+          readFileSync(fullDbPath, 'utf-8');
+          dbPath = fullDbPath;
+          console.log('Using full database for search');
+        } catch {
+          console.log('Using current database for search');
+        }
+        const existingData = JSON.parse(readFileSync(dbPath, 'utf-8')) as OutputData;
+        const filteredBooks = existingData.books.filter((book) =>
+          book.filename.toLowerCase().includes(options.keyword.toLowerCase()),
+        );
+        console.log(`Found ${filteredBooks.length} matching books`);
+
+        // Create summary for search
+        const summary: ProcessingSummary = {
+          totalFiles: existingData.books.length,
+          processedFiles: filteredBooks.length,
+          skippedFiles: existingData.books.length - filteredBooks.length,
+          pdfFiles: filteredBooks.filter((book) => book.type === 'pdf').length,
+          epubFiles: filteredBooks.filter((book) => book.type === 'epub').length,
+          failedFiles: 0,
+          mode: 'search',
+        };
+
+        // Save filtered data
+        const output: OutputData = {
+          summary,
+          books: filteredBooks,
+        };
+        writeFileSync(outputPath, JSON.stringify(output, null, 2));
+        console.log(`Search results saved to ${outputPath}`);
+      } catch (error) {
+        console.error(`Error searching books: ${(error as Error).message}`);
+        process.exit(1);
+      }
+      return; // Exit after mode 4
+    }
+
     // Extract metadata
     const newResults: BookMetadata[] = [];
     let pdfCount = 0;
@@ -242,6 +313,14 @@ async function main() {
       books: allResults,
     };
     writeFileSync(outputPath, JSON.stringify(output, null, 2));
+
+    // If full scan, also save to full-books.json
+    if (options.all) {
+      const fullOutputPath = 'output/full-books.json';
+      writeFileSync(fullOutputPath, JSON.stringify(output, null, 2));
+      console.log(`Full database saved to ${fullOutputPath}`);
+    }
+
     console.log(`Metadata saved to ${outputPath}`);
     console.log(
       `Summary: ${summary.processedFiles} processed, ${summary.skippedFiles} skipped, ${summary.failedFiles} failed`,
