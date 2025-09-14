@@ -6,18 +6,8 @@
 import chalk from 'chalk';
 import figlet from 'figlet';
 import inquirer from 'inquirer';
-
-/**
- * Represents the complete set of user choices for the metadata extraction process.
- */
-interface UserChoices {
-  /** Type of update: 'diff' for incremental updates, 'full' for complete scan */
-  updateType: 'diff' | 'full';
-  /** File types to process: 'both' for PDF+EPUB, or specific type */
-  fileType: 'both' | 'pdf' | 'epub';
-  /** Metadata extraction scope: 'metadata' only, or 'metadata+cover' for images too */
-  metadataType: 'metadata' | 'metadata+cover';
-}
+import { processFiles } from './fileProcessor';
+import { UserChoices } from './types';
 
 /**
  * Prompts user to select the type of update operation.
@@ -83,14 +73,18 @@ async function askFileType(): Promise<'both' | 'pdf' | 'epub'> {
  * Prompts user to select the scope of metadata extraction.
  * @returns Promise resolving to the chosen metadata type
  */
-async function askMetadataType(): Promise<'metadata' | 'metadata+cover'> {
+async function askMetadataType(): Promise<'file-metadata' | 'metadata' | 'metadata+cover'> {
   const metadataTypeChoices = [
     {
-      name: 'Metadata only (title, author, description, etc.)',
+      name: 'File metadata only (size, dates, path)',
+      value: 'file-metadata' as const,
+    },
+    {
+      name: 'Ebook metadata only (title, author, description, etc.)',
       value: 'metadata' as const,
     },
     {
-      name: 'Metadata and cover images',
+      name: 'Ebook metadata and cover images',
       value: 'metadata+cover' as const,
     },
   ];
@@ -129,20 +123,24 @@ async function getUserChoice(): Promise<UserChoices> {
  * Displays welcome message, collects user preferences, and shows summary.
  */
 async function main() {
-  // Display ASCII art banner
-  console.log(
-    chalk.rgb(
-      0,
-      123,
-      255,
-    )(
-      figlet.textSync('Ebook Tool', {
-        font: 'Standard',
-        horizontalLayout: 'default',
-        verticalLayout: 'default',
-      }),
-    ),
-  );
+  // Display ASCII art banner with gradient
+  const bannerText = figlet.textSync('Ebook Tool', {
+    font: 'Standard',
+    horizontalLayout: 'default',
+    verticalLayout: 'default',
+  });
+  const lines = bannerText.split('\n');
+  const startColor = [0, 123, 255]; // Blue
+  const endColor = [255, 0, 255]; // Magenta
+  const totalLines = lines.length;
+
+  lines.forEach((line, index) => {
+    const ratio = index / (totalLines - 1);
+    const r = Math.round(startColor[0] + (endColor[0] - startColor[0]) * ratio);
+    const g = Math.round(startColor[1] + (endColor[1] - startColor[1]) * ratio);
+    const b = Math.round(startColor[2] + (endColor[2] - startColor[2]) * ratio);
+    console.log(chalk.rgb(r, g, b)(line));
+  });
 
   console.log('📚 Ebook Metadata Extraction Tool');
   console.log('==================================');
@@ -162,7 +160,12 @@ async function main() {
           ? 'PDF files only'
           : 'EPUB files only';
 
-    const metadataTypeDisplay = choices.metadataType === 'metadata' ? 'Metadata only' : 'Metadata + Cover Images';
+    const metadataTypeDisplay =
+      choices.metadataType === 'file-metadata'
+        ? 'File metadata only'
+        : choices.metadataType === 'metadata'
+          ? 'Ebook metadata only'
+          : 'Ebook metadata + Cover Images';
 
     console.log('\n✅ Configuration Complete!');
     console.log('===========================');
@@ -174,8 +177,8 @@ async function main() {
     console.log(`   fileType: '${choices.fileType}'`);
     console.log(`   metadataType: '${choices.metadataType}'`);
 
-    console.log('\n🚀 Ready to process your ebooks!');
-    console.log('Next steps: Implement the actual extraction logic using these choices.');
+    // Process the files
+    await processFiles(choices);
   } catch (error) {
     console.error('❌ An error occurred during configuration:', (error as Error).message);
     process.exit(1);
