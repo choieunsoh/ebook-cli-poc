@@ -1,6 +1,6 @@
 /**
- * Token ranking utilities for analyzing and ranking token usage in ebook data.
- * Provides functionality to count, sort, and display most frequently used tokens.
+ * Token ranking utilities for analyzing and ranking token occurrences in ebook data.
+ * Provides functionality to count, sort, and display most frequently occurring tokens.
  */
 
 import * as fs from 'fs';
@@ -136,8 +136,8 @@ function rankTokens(tokenCounts: Map<string, number>, topN?: number): TokenRanki
  * @param source Source of the data (JSON or SQLite)
  */
 function displayTokenRankings(rankings: TokenRanking[], source: string): void {
-  console.log('\n📊 Token Usage Ranking');
-  console.log('======================');
+  console.log('\n📊 Token Occurrence Ranking');
+  console.log('===========================');
   console.log(`Source: ${source}`);
   console.log(`Total unique tokens: ${rankings.length}`);
   console.log(`Total token occurrences: ${rankings.reduce((sum, r) => sum + r.count, 0)}`);
@@ -149,8 +149,8 @@ function displayTokenRankings(rankings: TokenRanking[], source: string): void {
     return;
   }
 
-  console.log('🏆 Top Tokens by Usage:');
-  console.log('───────────────────────');
+  console.log('🏆 Top Tokens by Occurrences:');
+  console.log('─────────────────────────────');
 
   rankings.slice(0, 50).forEach((ranking, index) => {
     const rank = (index + 1).toString().padStart(3, ' ');
@@ -169,13 +169,13 @@ function displayTokenRankings(rankings: TokenRanking[], source: string): void {
   const top10Percentage = rankings.slice(0, 10).reduce((sum, r) => sum + r.percentage, 0);
   const top50Percentage = rankings.slice(0, 50).reduce((sum, r) => sum + r.percentage, 0);
 
-  console.log('\n📈 Usage Statistics:');
-  console.log(`   Top 10 tokens: ${top10Percentage.toFixed(1)}% of all token usage`);
-  console.log(`   Top 50 tokens: ${top50Percentage.toFixed(1)}% of all token usage`);
+  console.log('\n📈 Occurrence Statistics:');
+  console.log(`   Top 10 tokens: ${top10Percentage.toFixed(1)}% of all token occurrences`);
+  console.log(`   Top 50 tokens: ${top50Percentage.toFixed(1)}% of all token occurrences`);
 }
 
 /**
- * Analyzes and ranks token usage from JSON data file
+ * Analyzes and ranks token occurrences from JSON data file
  * @param dataFilePath Path to data.json file
  * @param topN Optional limit for number of results to display
  */
@@ -200,7 +200,7 @@ export async function rankTokensFromJSON(dataFilePath: string, topN?: number): P
 }
 
 /**
- * Analyzes and ranks token usage from SQLite database
+ * Analyzes and ranks token occurrences from SQLite database
  * @param dbPath Path to SQLite database
  * @param topN Optional limit for number of results to display
  */

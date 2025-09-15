@@ -73,7 +73,7 @@ async function askUpdateType(): Promise<
       value: 'run-sql' as const,
     },
     {
-      name: 'Rank Token Usage (analyze and rank most used tokens)',
+      name: 'Rank Token Occurrences (analyze and rank most used tokens)',
       value: 'rank-tokens' as const,
     },
   ];
@@ -394,7 +394,7 @@ async function main() {
     } else if (choices.updateType === 'run-sql') {
       updateTypeDisplay = 'Run SQL Query';
     } else if (choices.updateType === 'rank-tokens') {
-      updateTypeDisplay = 'Rank Token Usage';
+      updateTypeDisplay = 'Rank Token Occurrences';
     } else {
       updateTypeDisplay =
         choices.updateType === 'diff' ? 'Incremental Update (new/changed files only)' : 'Full Scan (all files)';
@@ -451,7 +451,7 @@ async function main() {
     } else if (choices.updateType === 'run-sql') {
       console.log(`   Interactive SQL query execution mode`);
     } else if (choices.updateType === 'rank-tokens') {
-      console.log(`   Token usage ranking and analysis mode`);
+      console.log(`   Token occurrence ranking and analysis mode`);
     } else {
       console.log(`   fileType: '${choices.fileType}'`);
       console.log(`   metadataType: '${choices.metadataType}'`);
