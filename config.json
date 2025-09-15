@@ -2,10 +2,11 @@
   "includes": [
     "H:\\E-Books"
   ],
-  "outputDir": "output",
-  "output": "books.json",
   "excludes": [
     "H:\\E-Books\\excludes"
   ],
+  "outputDir": "output",
+  "output": "books.json",
+  "dataFile": "data.json",
   "timestampFormat": "YYYY-MM-DD_HH-mm-ss"
 }

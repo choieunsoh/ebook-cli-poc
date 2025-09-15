@@ -6,14 +6,16 @@
  * Represents the complete set of user choices for the metadata extraction process.
  */
 export type UserChoices = {
-  /** Type of update: 'diff' for incremental updates, 'full' for complete scan */
-  updateType: 'diff' | 'full';
+  /** Type of update: 'diff' for incremental updates, 'full' for complete scan, 'append' for appending batch results */
+  updateType: 'diff' | 'full' | 'append';
   /** File types to process: 'both' for PDF+EPUB, or specific type */
   fileType: 'both' | 'pdf' | 'epub';
   /** Metadata extraction scope: 'file-metadata', 'metadata' only, or 'metadata+cover' for images too */
   metadataType: 'file-metadata' | 'metadata' | 'metadata+cover';
   /** Number of files to process in each batch */
   batchSize: number;
+  /** Batches directory for append operation */
+  batchDir?: string;
 };
 
 /**
@@ -72,6 +74,7 @@ export type Config = {
   output: string;
   excludes: string[];
   timestampFormat: string;
+  dataFile?: string;
 };
 
 /**

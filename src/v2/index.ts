@@ -5,7 +5,10 @@
 
 import chalk from 'chalk';
 import figlet from 'figlet';
+import * as fs from 'fs';
 import inquirer from 'inquirer';
+import * as path from 'path';
+import { appendBatchResults } from '../appendBatchResult';
 import { processFiles } from './fileProcessor';
 import { UserChoices } from './types';
 
@@ -13,7 +16,7 @@ import { UserChoices } from './types';
  * Prompts user to select the type of update operation.
  * @returns Promise resolving to the chosen update type
  */
-async function askUpdateType(): Promise<'diff' | 'full'> {
+async function askUpdateType(): Promise<'diff' | 'full' | 'append'> {
   const updateTypeChoices = [
     {
       name: 'Incremental Update (process only new or changed files)',
@@ -22,6 +25,10 @@ async function askUpdateType(): Promise<'diff' | 'full'> {
     {
       name: 'Full Scan (process all files from scratch)',
       value: 'full' as const,
+    },
+    {
+      name: 'Append Batch Results (append batch files to data.json)',
+      value: 'append' as const,
     },
   ];
 
@@ -129,22 +136,58 @@ async function askBatchSize(): Promise<number> {
 }
 
 /**
+ * Prompts user to enter the batch directory name.
+ * @returns Promise resolving to the batch directory name
+ */
+async function askBatchDir(): Promise<string> {
+  const answer = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'batchDir',
+      message: 'Enter the batch directory name (e.g., batches-2025-09-15_00-26-02):',
+      validate: (input: string) => {
+        if (!input.trim()) {
+          return 'Batch directory name cannot be empty';
+        }
+        return true;
+      },
+    },
+  ]);
+
+  return answer.batchDir.trim();
+}
+
+/**
  * Orchestrates the complete user interaction flow.
  * Asks all configuration questions in sequence.
  * @returns Promise resolving to complete user choices object
  */
 async function getUserChoice(): Promise<UserChoices> {
   const updateType = await askUpdateType();
-  const fileType = await askFileType();
-  const metadataType = await askMetadataType();
-  const batchSize = await askBatchSize();
+  let choices: UserChoices;
 
-  return {
-    updateType,
-    fileType,
-    metadataType,
-    batchSize,
-  };
+  if (updateType === 'append') {
+    const batchDir = await askBatchDir();
+    choices = {
+      updateType,
+      fileType: 'both', // Not used for append
+      metadataType: 'metadata', // Not used for append
+      batchSize: 10, // Not used for append
+      batchDir,
+    };
+  } else {
+    const fileType = await askFileType();
+    const metadataType = await askMetadataType();
+    const batchSize = await askBatchSize();
+    choices = {
+      updateType,
+      fileType,
+      metadataType,
+      batchSize,
+    };
+  }
+
+  return choices;
 }
 
 /**
@@ -178,9 +221,20 @@ async function main() {
   try {
     const choices = await getUserChoice();
 
+    // Load config for dataFile
+    const configPath = path.join(process.cwd(), 'config.json');
+    const configData = fs.readFileSync(configPath, 'utf-8');
+    const config = JSON.parse(configData);
+    const dataFilePath = path.join(process.cwd(), config.outputDir, config.dataFile ?? 'data.json');
+
     // Format display names for summary
-    const updateTypeDisplay =
-      choices.updateType === 'diff' ? 'Incremental Update (new/changed files only)' : 'Full Scan (all files)';
+    let updateTypeDisplay: string;
+    if (choices.updateType === 'append') {
+      updateTypeDisplay = 'Append Batch Results';
+    } else {
+      updateTypeDisplay =
+        choices.updateType === 'diff' ? 'Incremental Update (new/changed files only)' : 'Full Scan (all files)';
+    }
 
     const fileTypeDisplay =
       choices.fileType === 'both'
@@ -199,17 +253,30 @@ async function main() {
     console.log('\n✅ Configuration Complete!');
     console.log('===========================');
     console.log(`Update Type: ${updateTypeDisplay}`);
-    console.log(`File Types: ${fileTypeDisplay}`);
-    console.log(`Extraction: ${metadataTypeDisplay}`);
-    console.log(`Batch Size: ${choices.batchSize} files per batch`);
+    if (choices.updateType === 'append') {
+      console.log(`Batch Directory: ${choices.batchDir}`);
+      console.log(`Data File: ${dataFilePath}`);
+    } else {
+      console.log(`File Types: ${fileTypeDisplay}`);
+      console.log(`Extraction: ${metadataTypeDisplay}`);
+      console.log(`Batch Size: ${choices.batchSize} files per batch`);
+    }
     console.log('\n📋 Technical Values:');
     console.log(`   updateType: '${choices.updateType}'`);
-    console.log(`   fileType: '${choices.fileType}'`);
-    console.log(`   metadataType: '${choices.metadataType}'`);
-    console.log(`   batchSize: ${choices.batchSize}`);
+    if (choices.updateType === 'append') {
+      console.log(`   batchDir: '${choices.batchDir}'`);
+    } else {
+      console.log(`   fileType: '${choices.fileType}'`);
+      console.log(`   metadataType: '${choices.metadataType}'`);
+      console.log(`   batchSize: ${choices.batchSize}`);
+    }
 
-    // Process the files
-    await processFiles(choices);
+    // Process based on updateType
+    if (choices.updateType === 'append') {
+      appendBatchResults(choices.batchDir!, dataFilePath);
+    } else {
+      await processFiles(choices);
+    }
   } catch (error) {
     console.error('❌ An error occurred during configuration:', (error as Error).message);
     process.exit(1);
