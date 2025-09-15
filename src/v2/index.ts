@@ -585,6 +585,34 @@ async function main() {
       const batchDir = `batches-${sessionTimestamp}`;
       console.log(`\n💾 Appending batch results from: ${batchDir}`);
       appendBatchResults(batchDir, dataFilePath);
+
+      // Ask if user wants to run tokenization
+      const tokenizeAnswer = await inquirer.prompt({
+        type: 'confirm',
+        name: 'runTokenize',
+        message: 'Would you like to run tokenization on the processed data for enhanced search?',
+        default: true,
+      });
+
+      if (tokenizeAnswer.runTokenize) {
+        console.log('\n🔍 Starting tokenization of titles and filenames...');
+        await tokenizeData(dataFilePath);
+        console.log('✅ Tokenization complete!');
+      }
+
+      // Ask if user wants to import to SQLite
+      const sqliteAnswer = await inquirer.prompt({
+        type: 'confirm',
+        name: 'runSQLite',
+        message: 'Would you like to import the data to SQLite database?',
+        default: true,
+      });
+
+      if (sqliteAnswer.runSQLite) {
+        console.log('\n🗄️  Starting SQLite import...');
+        await importToSQLite(dataFilePath);
+        console.log('✅ SQLite import complete!');
+      }
     }
   } catch (error) {
     console.error('❌ An error occurred during configuration:', (error as Error).message);
