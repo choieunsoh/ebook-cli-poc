@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "node src/index.ts",
+    "dev": "node src/v2/index.ts",
     "build": "tsc",
-    "start": "yarn build && node dist/index.js",
+    "start": "yarn build && yarn v2",
     "v2": "node dist/v2/index.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

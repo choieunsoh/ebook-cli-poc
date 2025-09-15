@@ -20,10 +20,47 @@ import { rankTokensInteractive } from './tokenRanking';
 import { UserChoices } from './types';
 
 /**
- * Prompts user to select the type of update operation.
+ * Prompts user to select from quick actions or advanced options.
+ * @returns Promise resolving to the chosen quick action
+ */
+async function askQuickAction(): Promise<'quick-process' | 'quick-search' | 'quick-summarize' | 'advanced'> {
+  const quickActionChoices = [
+    {
+      name: '🔄 Process my ebooks (incremental)',
+      value: 'quick-process' as const,
+    },
+    {
+      name: '🔍 Search my collection',
+      value: 'quick-search' as const,
+    },
+    {
+      name: '📊 Show summary',
+      value: 'quick-summarize' as const,
+    },
+    {
+      name: '⚙️  Advanced Options...',
+      value: 'advanced' as const,
+    },
+  ];
+
+  const answer = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'quickAction',
+      message: 'What would you like to do?',
+      choices: quickActionChoices,
+      pageSize: quickActionChoices.length,
+    },
+  ]);
+
+  return answer.quickAction;
+}
+
+/**
+ * Prompts user to select from advanced options with grouped categories.
  * @returns Promise resolving to the chosen update type
  */
-async function askUpdateType(): Promise<
+async function askAdvancedUpdateType(): Promise<
   | 'diff'
   | 'full'
   | 'append'
@@ -35,7 +72,8 @@ async function askUpdateType(): Promise<
   | 'run-sql'
   | 'rank-tokens'
 > {
-  const updateTypeChoices = [
+  const advancedChoices = [
+    new inquirer.Separator('📁 FILE PROCESSING'),
     {
       name: 'Incremental Update (process only new or changed files)',
       value: 'diff' as const,
@@ -48,6 +86,7 @@ async function askUpdateType(): Promise<
       name: 'Append Batch Results (append batch files to data.json)',
       value: 'append' as const,
     },
+    new inquirer.Separator('🔍 DATA ANALYSIS & SEARCH'),
     {
       name: 'Summarize Data (read and summarize data.json)',
       value: 'summarize' as const,
@@ -57,24 +96,26 @@ async function askUpdateType(): Promise<
       value: 'search' as const,
     },
     {
-      name: 'Import to SQLite (import data.json to SQLite database with deduplication)',
+      name: 'Rank Token Occurrences (analyze and rank most used tokens)',
+      value: 'rank-tokens' as const,
+    },
+    new inquirer.Separator('🗄️  DATABASE OPERATIONS'),
+    {
+      name: 'Import to SQLite (import data.json to SQLite database)',
       value: 'import-sqlite' as const,
     },
+    {
+      name: 'Run SQL Query (execute custom SQL commands)',
+      value: 'run-sql' as const,
+    },
+    new inquirer.Separator('⚙️  SEARCH ENHANCEMENT'),
     {
       name: 'Tokenize Titles/Filenames (add tokenized data for search)',
       value: 'tokenize' as const,
     },
     {
-      name: 'Configure Tokenization Settings (customize tokenization options)',
+      name: 'Configure Tokenization Settings (customize options)',
       value: 'configure-tokenization' as const,
-    },
-    {
-      name: 'Run SQL Query (execute custom SQL commands on SQLite database)',
-      value: 'run-sql' as const,
-    },
-    {
-      name: 'Rank Token Occurrences (analyze and rank most used tokens)',
-      value: 'rank-tokens' as const,
     },
   ];
 
@@ -82,13 +123,43 @@ async function askUpdateType(): Promise<
     {
       type: 'list',
       name: 'updateType',
-      message: 'Select the type of update to perform:',
-      choices: updateTypeChoices,
-      pageSize: updateTypeChoices.length, // Show all options without pagination
+      message: 'Advanced Options - Select the type of update to perform:',
+      choices: advancedChoices,
+      pageSize: advancedChoices.length,
     },
   ]);
 
   return answer.updateType;
+}
+
+/**
+ * Maps quick action selections to actual update types.
+ * @param quickAction The quick action selected
+ * @returns The corresponding update type
+ */
+function mapQuickActionToUpdateType(
+  quickAction: 'quick-process' | 'quick-search' | 'quick-summarize',
+):
+  | 'diff'
+  | 'full'
+  | 'append'
+  | 'summarize'
+  | 'search'
+  | 'import-sqlite'
+  | 'tokenize'
+  | 'configure-tokenization'
+  | 'run-sql'
+  | 'rank-tokens' {
+  switch (quickAction) {
+    case 'quick-process':
+      return 'diff';
+    case 'quick-search':
+      return 'search';
+    case 'quick-summarize':
+      return 'summarize';
+    default:
+      throw new Error(`Unknown quick action: ${quickAction}`);
+  }
 }
 
 /**
@@ -258,7 +329,29 @@ async function askSearchSource(): Promise<'json' | 'sqlite'> {
  * @returns Promise resolving to complete user choices object
  */
 async function getUserChoice(): Promise<UserChoices> {
-  const updateType = await askUpdateType();
+  // First show quick actions menu
+  const quickChoice = await askQuickAction();
+
+  let updateType:
+    | 'diff'
+    | 'full'
+    | 'append'
+    | 'summarize'
+    | 'search'
+    | 'import-sqlite'
+    | 'tokenize'
+    | 'configure-tokenization'
+    | 'run-sql'
+    | 'rank-tokens';
+
+  if (quickChoice === 'advanced') {
+    // Show advanced menu with grouped categories
+    updateType = await askAdvancedUpdateType();
+  } else {
+    // Map quick action to actual update type
+    updateType = mapQuickActionToUpdateType(quickChoice);
+  }
+
   let choices: UserChoices;
 
   if (updateType === 'append') {
@@ -386,9 +479,9 @@ async function main() {
     if (choices.updateType === 'append') {
       updateTypeDisplay = 'Append Batch Results';
     } else if (choices.updateType === 'summarize') {
-      updateTypeDisplay = 'Summarize Data';
+      updateTypeDisplay = '📊 Show Summary';
     } else if (choices.updateType === 'search') {
-      updateTypeDisplay = 'Search by Title';
+      updateTypeDisplay = '🔍 Search Collection';
     } else if (choices.updateType === 'import-sqlite') {
       updateTypeDisplay = 'Import to SQLite Database';
     } else if (choices.updateType === 'tokenize') {
@@ -399,9 +492,10 @@ async function main() {
       updateTypeDisplay = 'Run SQL Query';
     } else if (choices.updateType === 'rank-tokens') {
       updateTypeDisplay = 'Rank Token Occurrences';
+    } else if (choices.updateType === 'diff') {
+      updateTypeDisplay = '🔄 Process Ebooks (Incremental)';
     } else {
-      updateTypeDisplay =
-        choices.updateType === 'diff' ? 'Incremental Update (new/changed files only)' : 'Full Scan (all files)';
+      updateTypeDisplay = 'Full Scan (all files)';
     }
 
     const fileTypeDisplay =
