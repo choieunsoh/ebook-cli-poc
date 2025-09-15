@@ -14,7 +14,7 @@ import {
   createTokenizeChoices,
 } from './builders';
 import { askAdvancedUpdateType, askQuickAction } from './prompts';
-import { UserChoices } from './types';
+import { AdvancedUpdateType, UpdateType, UserChoices } from './types';
 import { mapQuickActionToUpdateType } from './utils';
 
 /**
@@ -47,7 +47,7 @@ export async function getUserChoice(): Promise<UserChoices> {
  */
 async function resolveUpdateType(
   quickChoice: 'quick-process' | 'quick-search' | 'quick-summarize' | 'advanced',
-): Promise<UserChoices['updateType'] | 'back'> {
+): Promise<AdvancedUpdateType> {
   if (quickChoice === 'advanced') {
     // Show advanced menu with grouped categories
     return await askAdvancedUpdateType();
@@ -60,7 +60,7 @@ async function resolveUpdateType(
 /**
  * Creates the user choices object based on the update type.
  */
-async function createUserChoices(updateType: UserChoices['updateType']): Promise<UserChoices> {
+async function createUserChoices(updateType: UpdateType): Promise<UserChoices> {
   const choiceBuilders: Record<string, () => Promise<UserChoices>> = {
     append: createAppendChoices,
     summarize: createSummarizeChoices,

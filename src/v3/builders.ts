@@ -116,9 +116,14 @@ export async function createRankTokensChoices(): Promise<UserChoices> {
 }
 
 /**
+ * File processing update types (subset of UpdateType)
+ */
+type FileProcessingUpdateType = 'diff' | 'full';
+
+/**
  * Creates choices for file processing operations (diff and full).
  */
-export async function createFileProcessingChoices(updateType: 'diff' | 'full'): Promise<UserChoices> {
+export async function createFileProcessingChoices(updateType: FileProcessingUpdateType): Promise<UserChoices> {
   const fileType = await askFileType();
   const metadataType = await askMetadataType();
   const batchSize = await askBatchSize();

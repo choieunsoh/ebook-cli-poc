@@ -3,6 +3,7 @@
  */
 
 import inquirer from 'inquirer';
+import { AdvancedUpdateType } from './types';
 
 /**
  * Prompts user to select from quick actions or advanced options.
@@ -43,19 +44,7 @@ export async function askQuickAction(): Promise<'quick-process' | 'quick-search'
 /**
  * Prompts user to select from advanced options with grouped categories.
  */
-export async function askAdvancedUpdateType(): Promise<
-  | 'diff'
-  | 'full'
-  | 'append'
-  | 'summarize'
-  | 'search'
-  | 'import-sqlite'
-  | 'tokenize'
-  | 'configure-tokenization'
-  | 'run-sql'
-  | 'rank-tokens'
-  | 'back'
-> {
+export async function askAdvancedUpdateType(): Promise<AdvancedUpdateType> {
   const advancedChoices = [
     new inquirer.Separator('📁 FILE PROCESSING'),
     {
