@@ -393,7 +393,16 @@ async function main() {
     } else if (choices.updateType === 'import-sqlite') {
       await importToSQLite(dataFilePath);
     } else {
-      await processFiles(choices);
+      // Generate session timestamp for batch directory naming
+      const now = new Date();
+      const sessionTimestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, -5);
+
+      await processFiles(choices, sessionTimestamp);
+
+      // Automatically append batch results after processing
+      const batchDir = `batches-${sessionTimestamp}`;
+      console.log(`\n💾 Appending batch results from: ${batchDir}`);
+      appendBatchResults(batchDir, dataFilePath);
     }
   } catch (error) {
     console.error('❌ An error occurred during configuration:', (error as Error).message);

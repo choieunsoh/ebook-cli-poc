@@ -526,8 +526,9 @@ function getAllFiles(
 /**
  * Processes the ebook files based on user choices.
  * @param choices - The user's configuration choices
+ * @param sessionTimestamp - The session timestamp for batch directory naming
  */
-export async function processFiles(choices: UserChoices) {
+export async function processFiles(choices: UserChoices, sessionTimestamp?: string) {
   console.log('\n🔍 Scanning for files...');
 
   // Load configuration and previous data
@@ -582,7 +583,8 @@ export async function processFiles(choices: UserChoices) {
 
   // Track overall processing start time and session timestamp
   const overallStartTime = Date.now();
-  const sessionTimestamp = formatTimestamp(new Date(overallStartTime), config.timestampFormat);
+  const actualSessionTimestamp =
+    sessionTimestamp || formatTimestamp(new Date(overallStartTime), config.timestampFormat);
 
   // Process all files in batches using the generator
   const allResults: ProcessingResult[] = [];
@@ -593,7 +595,7 @@ export async function processFiles(choices: UserChoices) {
     config,
     previousResults,
     overallStartTime,
-    sessionTimestamp,
+    actualSessionTimestamp,
   )) {
     allResults.push(...batchResults);
   }
