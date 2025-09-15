@@ -323,7 +323,7 @@ function generateBatchSummary(
   console.log(`📖 EPUB files: ${epubFiles.toLocaleString()}`);
   console.log(`🎯 Successful extractions: ${successfulExtractions.toLocaleString()}`);
   console.log(`❌ Failed extractions: ${failedExtractions.toLocaleString()}`);
-  console.log(`💾 Batch size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+  console.log(`💾 Batch size: ${formatBytes(totalSize)}`);
   console.log(`⏱️  Batch processing time: ${formatDuration(batchProcessingTime)}`);
 
   if (processedFiles > 0) {
@@ -338,6 +338,32 @@ function generateBatchSummary(
   console.log(`⏱️  Elapsed time: ${formatDuration(overallProcessingTime)}`);
   console.log(`⏳ Estimated remaining: ${formatDuration(estimatedRemainingTime)}`);
   console.log(`🎯 Estimated completion: ${estimatedCompletion.toLocaleString()}`);
+}
+
+/**
+ * Formats bytes into a human-readable format (B, kB, MB, GB, TB)
+ */
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+
+  const k = 1024;
+  const sizes = ['B', 'kB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+/**
+ * Formats data throughput (bytes per second) into human-readable format
+ */
+function formatThroughput(bytesPerSecond: number): string {
+  if (bytesPerSecond === 0) return '0 B/s';
+
+  const k = 1024;
+  const sizes = ['B/s', 'kB/s', 'MB/s', 'GB/s', 'TB/s'];
+  const i = Math.floor(Math.log(bytesPerSecond) / Math.log(k));
+
+  return parseFloat((bytesPerSecond / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 /**
@@ -414,8 +440,8 @@ function displayProcessingSummary(summary: ProcessingSummary): void {
   console.log(`📖 EPUB files: ${summary.epubFiles.toLocaleString()}`);
   console.log(`🎯 Successful extractions: ${summary.successfulExtractions.toLocaleString()}`);
   console.log(`❌ Failed extractions: ${summary.failedExtractions.toLocaleString()}`);
-  console.log(`💾 Total size: ${(summary.totalSize / 1024 / 1024).toFixed(2)} MB`);
-  console.log(`📏 Average file size: ${(summary.averageFileSize / 1024 / 1024).toFixed(2)} MB`);
+  console.log(`💾 Total size: ${formatBytes(summary.totalSize)}`);
+  console.log(`📏 Average file size: ${formatBytes(summary.averageFileSize)}`);
   console.log(`⏱️  Total processing time: ${formatDuration(summary.processingTime)}`);
 
   if (summary.processedFiles > 0) {
@@ -428,8 +454,8 @@ function displayProcessingSummary(summary: ProcessingSummary): void {
   console.log('========================');
   console.log(`🚀 Files per second: ${summary.filesPerSecond.toFixed(2)}`);
   console.log(`⏱️  Average time per file: ${formatDuration(summary.averageTimePerFile)}`);
-  console.log(`💾 Data processed: ${(summary.totalDataProcessed / 1024 / 1024).toFixed(2)} MB`);
-  console.log(`📊 Data throughput: ${(summary.dataThroughput / 1024 / 1024).toFixed(2)} MB/s`);
+  console.log(`💾 Data processed: ${formatBytes(summary.totalDataProcessed)}`);
+  console.log(`📊 Data throughput: ${formatThroughput(summary.dataThroughput)}`);
 
   // Time breakdown
   console.log('\n⏰ Time Processing Summary');

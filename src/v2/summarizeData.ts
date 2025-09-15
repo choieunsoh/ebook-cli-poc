@@ -6,6 +6,19 @@ import * as fs from 'fs';
 import { ProcessingResult } from './types';
 
 /**
+ * Formats bytes into a human-readable format (B, kB, MB, GB, TB)
+ */
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+
+  const k = 1024;
+  const sizes = ['B', 'kB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+/**
  * Summarizes the data in data.json and prints the summary.
  * @param dataFilePath - Path to the data.json file
  * @param displayWithoutMetadata - Whether to display the list of files without metadata
@@ -27,7 +40,7 @@ export function summarizeData(dataFilePath: string, displayWithoutMetadata: bool
     console.log(`📖 EPUB files: ${epubFiles.toLocaleString()}`);
     console.log(`🎯 With metadata: ${withMetadata.toLocaleString()}`);
     console.log(`❌ Without metadata: ${withoutMetadata.toLocaleString()}`);
-    console.log(`💾 Total size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+    console.log(`💾 Total size: ${formatBytes(totalSize)}`);
 
     if (displayWithoutMetadata && withoutMetadata > 0) {
       console.log('\n📋 Files without metadata:');
