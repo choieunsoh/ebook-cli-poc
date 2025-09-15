@@ -16,6 +16,7 @@ import { runSQLQuery } from './sqlQueryExecutor';
 import { summarizeData } from './summarizeData';
 import { configureTokenization } from './tokenizationConfig';
 import { tokenizeData } from './tokenizeData';
+import { rankTokensInteractive } from './tokenRanking';
 import { UserChoices } from './types';
 
 /**
@@ -32,6 +33,7 @@ async function askUpdateType(): Promise<
   | 'tokenize'
   | 'configure-tokenization'
   | 'run-sql'
+  | 'rank-tokens'
 > {
   const updateTypeChoices = [
     {
@@ -69,6 +71,10 @@ async function askUpdateType(): Promise<
     {
       name: 'Run SQL Query (execute custom SQL commands on SQLite database)',
       value: 'run-sql' as const,
+    },
+    {
+      name: 'Rank Token Usage (analyze and rank most used tokens)',
+      value: 'rank-tokens' as const,
     },
   ];
 
@@ -307,6 +313,13 @@ async function getUserChoice(): Promise<UserChoices> {
       metadataType: 'metadata', // Not used for run-sql
       batchSize: 10, // Not used for run-sql
     };
+  } else if (updateType === 'rank-tokens') {
+    choices = {
+      updateType,
+      fileType: 'both', // Not used for rank-tokens
+      metadataType: 'metadata', // Not used for rank-tokens
+      batchSize: 10, // Not used for rank-tokens
+    };
   } else {
     const fileType = await askFileType();
     const metadataType = await askMetadataType();
@@ -380,6 +393,8 @@ async function main() {
       updateTypeDisplay = 'Configure Tokenization Settings';
     } else if (choices.updateType === 'run-sql') {
       updateTypeDisplay = 'Run SQL Query';
+    } else if (choices.updateType === 'rank-tokens') {
+      updateTypeDisplay = 'Rank Token Usage';
     } else {
       updateTypeDisplay =
         choices.updateType === 'diff' ? 'Incremental Update (new/changed files only)' : 'Full Scan (all files)';
@@ -435,6 +450,8 @@ async function main() {
       console.log(`   Interactive tokenization configuration mode`);
     } else if (choices.updateType === 'run-sql') {
       console.log(`   Interactive SQL query execution mode`);
+    } else if (choices.updateType === 'rank-tokens') {
+      console.log(`   Token usage ranking and analysis mode`);
     } else {
       console.log(`   fileType: '${choices.fileType}'`);
       console.log(`   metadataType: '${choices.metadataType}'`);
@@ -467,6 +484,10 @@ async function main() {
       console.log('🗄️  Starting SQL query executor...');
       await runSQLQuery();
       console.log('✅ SQL session complete!');
+    } else if (choices.updateType === 'rank-tokens') {
+      console.log('📊 Starting token ranking analysis...');
+      await rankTokensInteractive(dataFilePath);
+      console.log('✅ Token ranking complete!');
     } else {
       // Generate session timestamp for batch directory naming
       const now = new Date();

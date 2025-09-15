@@ -17,7 +17,6 @@
     "useStemming": true,
     "customStopwords": [],
     "fieldsToTokenize": [
-      "title",
       "filename"
     ]
   }

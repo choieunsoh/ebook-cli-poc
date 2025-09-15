@@ -3,6 +3,7 @@
  */
 
 import * as fs from 'fs';
+import inquirer from 'inquirer';
 import natural from 'natural';
 import * as path from 'path';
 
@@ -72,6 +73,29 @@ export async function tokenizeData(dataFilePath: string, forceUpdate: boolean = 
   try {
     console.log(`🔍 Reading data from: ${dataFilePath}`);
 
+    // Ask user for tokenization mode if not specified
+    if (!forceUpdate) {
+      const answer = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'tokenizationMode',
+          message: 'Choose tokenization mode:',
+          choices: [
+            {
+              name: 'Update existing tokens (skip entries that already have tokens)',
+              value: 'update',
+            },
+            {
+              name: 'Fresh run (re-tokenize all entries from scratch)',
+              value: 'fresh',
+            },
+          ],
+        },
+      ]);
+
+      forceUpdate = answer.tokenizationMode === 'fresh';
+    }
+
     // Load configuration
     const configPath = path.join(process.cwd(), 'config.json');
     const configData = fs.readFileSync(configPath, 'utf-8');
@@ -81,7 +105,7 @@ export async function tokenizeData(dataFilePath: string, forceUpdate: boolean = 
       minTokenLength: 2,
       maxTokenLength: 50,
       removeStopwords: true,
-      useStemming: true,
+      useStemming: false, // Disabled by default to avoid weird stems like 'machin' -> 'machine'
       customStopwords: [],
       fieldsToTokenize: ['title', 'filename'],
     };
@@ -113,9 +137,10 @@ export async function tokenizeData(dataFilePath: string, forceUpdate: boolean = 
 
       const tokens: string[] = [];
 
-      // Tokenize filename
+      // Tokenize filename (remove extension first)
       if (entry.file) {
-        const filenameTokens = tokenizeText(entry.file, tokenizationConfig);
+        const filenameWithoutExt = entry.file.replace(/\.(pdf|epub)$/i, '');
+        const filenameTokens = tokenizeText(filenameWithoutExt, tokenizationConfig);
         tokens.push(...filenameTokens);
       }
 
@@ -217,9 +242,10 @@ async function tokenizeSQLiteData(
 
       const tokens: string[] = [];
 
-      // Tokenize filename
+      // Tokenize filename (remove extension first)
       if (record.file) {
-        const filenameTokens = tokenizeText(record.file, config);
+        const filenameWithoutExt = record.file.replace(/\.(pdf|epub)$/i, '');
+        const filenameTokens = tokenizeText(filenameWithoutExt, config);
         tokens.push(...filenameTokens);
       }
 
