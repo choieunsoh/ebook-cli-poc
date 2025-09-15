@@ -8,5 +8,17 @@
   "outputDir": "output",
   "output": "books.json",
   "dataFile": "data.json",
-  "timestampFormat": "YYYY-MM-DD_HH-mm-ss"
+  "timestampFormat": "YYYY-MM-DD_HH-mm-ss",
+  "tokenization": {
+    "enabled": true,
+    "minTokenLength": 2,
+    "maxTokenLength": 50,
+    "removeStopwords": true,
+    "useStemming": true,
+    "customStopwords": [],
+    "fieldsToTokenize": [
+      "title",
+      "filename"
+    ]
+  }
 }

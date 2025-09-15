@@ -5,6 +5,7 @@
 import { exec } from 'child_process';
 import * as fs from 'fs';
 import inquirer from 'inquirer';
+import natural from 'natural';
 import { promisify } from 'util';
 import { ProcessingResult } from './types';
 
@@ -23,9 +24,13 @@ interface SQLiteEbookRow {
 /**
  * Parses search terms and operators from user input
  * @param searchInput - Raw search input from user
- * @returns Object with parsed terms and operator
+ * @returns Object with parsed terms, stemmed terms, and operator
  */
-function parseSearchQuery(searchInput: string): { terms: string[]; operator: 'AND' | 'OR' | 'PHRASE' } {
+function parseSearchQuery(searchInput: string): {
+  terms: string[];
+  stemmedTerms: string[];
+  operator: 'AND' | 'OR' | 'PHRASE';
+} {
   const input = searchInput.trim().toLowerCase();
 
   // Check for explicit operators
@@ -34,7 +39,8 @@ function parseSearchQuery(searchInput: string): { terms: string[]; operator: 'AN
       .split(/\s+and\s+/)
       .map((term) => term.trim())
       .filter((term) => term.length > 0);
-    return { terms, operator: 'AND' };
+    const stemmedTerms = terms.map((term) => natural.PorterStemmer.stem(term));
+    return { terms, stemmedTerms, operator: 'AND' };
   }
 
   // Check for + syntax (concise AND)
@@ -43,7 +49,8 @@ function parseSearchQuery(searchInput: string): { terms: string[]; operator: 'AN
       .split(/\+/)
       .map((term) => term.trim())
       .filter((term) => term.length > 0);
-    return { terms, operator: 'AND' };
+    const stemmedTerms = terms.map((term) => natural.PorterStemmer.stem(term));
+    return { terms, stemmedTerms, operator: 'AND' };
   }
 
   if (input.includes(' or ')) {
@@ -51,32 +58,38 @@ function parseSearchQuery(searchInput: string): { terms: string[]; operator: 'AN
       .split(/\s+or\s+/)
       .map((term) => term.trim())
       .filter((term) => term.length > 0);
-    return { terms, operator: 'OR' };
+    const stemmedTerms = terms.map((term) => natural.PorterStemmer.stem(term));
+    return { terms, stemmedTerms, operator: 'OR' };
   }
 
   // Check for quoted phrases
   const quotedMatch = input.match(/"([^"]+)"/);
   if (quotedMatch) {
-    return { terms: [quotedMatch[1]], operator: 'PHRASE' };
+    const terms = [quotedMatch[1]];
+    const stemmedTerms = terms.map((term) => natural.PorterStemmer.stem(term));
+    return { terms, stemmedTerms, operator: 'PHRASE' };
   }
 
   // Default: treat as OR search with space-separated terms
   const terms = input.split(/\s+/).filter((term) => term.length > 0);
-  return { terms: terms.length > 1 ? terms : [input], operator: terms.length > 1 ? 'OR' : 'PHRASE' };
+  const stemmedTerms = terms.map((term) => natural.PorterStemmer.stem(term));
+  return { terms: terms.length > 1 ? terms : [input], stemmedTerms, operator: terms.length > 1 ? 'OR' : 'PHRASE' };
 }
 
 /**
- * Builds SQL WHERE clause for advanced search
+ * Builds SQL WHERE clause for advanced search including tokens
  * @param terms - Search terms
+ * @param stemmedTerms - Stemmed search terms
  * @param operator - Search operator
  * @returns SQL WHERE clause
  */
-function buildSearchWhereClause(terms: string[], operator: 'AND' | 'OR' | 'PHRASE'): string {
+function buildSearchWhereClause(terms: string[], stemmedTerms: string[], operator: 'AND' | 'OR' | 'PHRASE'): string {
   if (terms.length === 0) return '1=1'; // Always true if no terms
 
-  const conditions = terms.map((term) => {
+  const conditions = terms.map((term, index) => {
     const searchTerm = term.replace(/'/g, "''"); // Escape single quotes for SQL
-    return `(LOWER(title) LIKE LOWER('%${searchTerm}%') OR LOWER(file) LIKE LOWER('%${searchTerm}%'))`;
+    const stemmedTerm = stemmedTerms[index].replace(/'/g, "''");
+    return `(LOWER(title) LIKE LOWER('%${searchTerm}%') OR LOWER(file) LIKE LOWER('%${searchTerm}%') OR (tokens IS NOT NULL AND tokens LIKE '%"${stemmedTerm}"%'))`;
   });
 
   if (operator === 'PHRASE' || terms.length === 1) {
@@ -159,8 +172,8 @@ export async function searchByTitleSQLite(dbPath: string): Promise<void> {
       const db = new Database(dbPath);
 
       // Parse search query for advanced search
-      const { terms, operator } = parseSearchQuery(currentSearchTerm);
-      const whereClause = buildSearchWhereClause(terms, operator);
+      const { terms, stemmedTerms, operator } = parseSearchQuery(currentSearchTerm);
+      const whereClause = buildSearchWhereClause(terms, stemmedTerms, operator);
 
       // Search query with advanced search capabilities
       const query = `
@@ -291,23 +304,37 @@ export async function searchByTitle(dataFilePath: string, initialSearchTerm: str
       const data = JSON.parse(fs.readFileSync(dataFilePath, 'utf-8')) as ProcessingResult[];
 
       // Parse search query for advanced search
-      const { terms, operator } = parseSearchQuery(currentSearchTerm);
+      const { terms, stemmedTerms, operator } = parseSearchQuery(currentSearchTerm);
       const lowerTerms = terms.map((term) => term.toLowerCase());
 
       const matches = data.filter((d) => {
         const title = (d.metadata as { title?: string })?.title?.toLowerCase() || '';
         const file = d.file.toLowerCase();
+        const tokens = d.tokens || [];
 
+        // Check original search
+        let matchesOriginal = false;
         if (operator === 'AND') {
-          // All terms must be present
-          return lowerTerms.every((term) => title.includes(term) || file.includes(term));
+          matchesOriginal = lowerTerms.every((term) => title.includes(term) || file.includes(term));
         } else if (operator === 'OR') {
-          // At least one term must be present
-          return lowerTerms.some((term) => title.includes(term) || file.includes(term));
+          matchesOriginal = lowerTerms.some((term) => title.includes(term) || file.includes(term));
         } else {
-          // PHRASE: exact match for single term or quoted phrase
-          return lowerTerms.some((term) => title.includes(term) || file.includes(term));
+          matchesOriginal = lowerTerms.some((term) => title.includes(term) || file.includes(term));
         }
+
+        // Check tokens
+        let matchesTokens = false;
+        if (tokens.length > 0) {
+          if (operator === 'AND') {
+            matchesTokens = stemmedTerms.every((term) => tokens.includes(term));
+          } else if (operator === 'OR') {
+            matchesTokens = stemmedTerms.some((term) => tokens.includes(term));
+          } else {
+            matchesTokens = stemmedTerms.some((term) => tokens.includes(term));
+          }
+        }
+
+        return matchesOriginal || matchesTokens;
       });
 
       console.log('\n🔍 Search Results');

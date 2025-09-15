@@ -6,8 +6,16 @@
  * Represents the complete set of user choices for the metadata extraction process.
  */
 export type UserChoices = {
-  /** Type of update: 'diff' for incremental updates, 'full' for complete scan, 'append' for appending batch results, 'summarize' for summarizing data, 'search' for searching by title, 'import-sqlite' for importing to SQLite database */
-  updateType: 'diff' | 'full' | 'append' | 'summarize' | 'search' | 'import-sqlite';
+  /** Type of update: 'diff' for incremental updates, 'full' for complete scan, 'append' for appending batch results, 'summarize' for summarizing data, 'search' for searching by title, 'import-sqlite' for importing to SQLite database, 'tokenize' for tokenizing titles/filenames, 'configure-tokenization' for configuring tokenization settings */
+  updateType:
+    | 'diff'
+    | 'full'
+    | 'append'
+    | 'summarize'
+    | 'search'
+    | 'import-sqlite'
+    | 'tokenize'
+    | 'configure-tokenization';
   /** File types to process: 'both' for PDF+EPUB, or specific type */
   fileType: 'both' | 'pdf' | 'epub';
   /** Metadata extraction scope: 'file-metadata', 'metadata' only, or 'metadata+cover' for images too */
@@ -81,6 +89,15 @@ export type Config = {
   excludes: string[];
   timestampFormat: string;
   dataFile?: string;
+  tokenization?: {
+    enabled: boolean;
+    minTokenLength: number;
+    maxTokenLength: number;
+    removeStopwords: boolean;
+    useStemming: boolean;
+    customStopwords: string[];
+    fieldsToTokenize: string[];
+  };
 };
 
 /**
@@ -99,6 +116,7 @@ export type ProcessingResult = {
   type: string;
   fileMetadata: FileMetadata;
   metadata: BookMetadata | null;
+  tokens?: string[];
 };
 
 /**

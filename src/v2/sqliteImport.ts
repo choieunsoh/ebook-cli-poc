@@ -99,6 +99,7 @@ export async function importToSQLite(dataFilePath: string): Promise<void> {
           accessed_date TEXT,
           file_path TEXT,
           metadata_json TEXT,
+          tokens TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
@@ -157,7 +158,7 @@ export async function importToSQLite(dataFilePath: string): Promise<void> {
                 title = ?, author = ?, creator = ?, subject = ?, description = ?,
                 language = ?, date = ?, pages = ?, size = ?,
                 created_date = ?, modified_date = ?, accessed_date = ?,
-                file_path = ?, metadata_json = ?, updated_at = CURRENT_TIMESTAMP
+                file_path = ?, metadata_json = ?, tokens = ?, updated_at = CURRENT_TIMESTAMP
               WHERE file = ?
             `,
               [
@@ -175,6 +176,7 @@ export async function importToSQLite(dataFilePath: string): Promise<void> {
                 safeDateToISOString(fileMetadata.accessed),
                 fileMetadata.path || null,
                 JSON.stringify(metadata),
+                item.tokens ? JSON.stringify(item.tokens) : null,
                 item.file,
               ],
               function (err: Error | null) {
@@ -192,8 +194,8 @@ export async function importToSQLite(dataFilePath: string): Promise<void> {
               INSERT INTO ebooks (
                 file, type, title, author, creator, subject, description,
                 language, date, pages, size, created_date, modified_date,
-                accessed_date, file_path, metadata_json
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                accessed_date, file_path, metadata_json, tokens
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
               [
                 item.file,
@@ -212,6 +214,7 @@ export async function importToSQLite(dataFilePath: string): Promise<void> {
                 safeDateToISOString(fileMetadata.accessed),
                 fileMetadata.path || null,
                 JSON.stringify(metadata),
+                item.tokens ? JSON.stringify(item.tokens) : null,
               ],
               function (err: Error | null) {
                 if (err) reject(err);
