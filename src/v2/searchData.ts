@@ -21,6 +21,73 @@ interface SQLiteEbookRow {
 }
 
 /**
+ * Parses search terms and operators from user input
+ * @param searchInput - Raw search input from user
+ * @returns Object with parsed terms and operator
+ */
+function parseSearchQuery(searchInput: string): { terms: string[]; operator: 'AND' | 'OR' | 'PHRASE' } {
+  const input = searchInput.trim().toLowerCase();
+
+  // Check for explicit operators
+  if (input.includes(' and ')) {
+    const terms = input
+      .split(/\s+and\s+/)
+      .map((term) => term.trim())
+      .filter((term) => term.length > 0);
+    return { terms, operator: 'AND' };
+  }
+
+  // Check for + syntax (concise AND)
+  if (input.includes('+')) {
+    const terms = input
+      .split(/\+/)
+      .map((term) => term.trim())
+      .filter((term) => term.length > 0);
+    return { terms, operator: 'AND' };
+  }
+
+  if (input.includes(' or ')) {
+    const terms = input
+      .split(/\s+or\s+/)
+      .map((term) => term.trim())
+      .filter((term) => term.length > 0);
+    return { terms, operator: 'OR' };
+  }
+
+  // Check for quoted phrases
+  const quotedMatch = input.match(/"([^"]+)"/);
+  if (quotedMatch) {
+    return { terms: [quotedMatch[1]], operator: 'PHRASE' };
+  }
+
+  // Default: treat as OR search with space-separated terms
+  const terms = input.split(/\s+/).filter((term) => term.length > 0);
+  return { terms: terms.length > 1 ? terms : [input], operator: terms.length > 1 ? 'OR' : 'PHRASE' };
+}
+
+/**
+ * Builds SQL WHERE clause for advanced search
+ * @param terms - Search terms
+ * @param operator - Search operator
+ * @returns SQL WHERE clause
+ */
+function buildSearchWhereClause(terms: string[], operator: 'AND' | 'OR' | 'PHRASE'): string {
+  if (terms.length === 0) return '1=1'; // Always true if no terms
+
+  const conditions = terms.map((term) => {
+    const searchTerm = term.replace(/'/g, "''"); // Escape single quotes for SQL
+    return `(LOWER(title) LIKE LOWER('%${searchTerm}%') OR LOWER(file) LIKE LOWER('%${searchTerm}%'))`;
+  });
+
+  if (operator === 'PHRASE' || terms.length === 1) {
+    return conditions[0];
+  }
+
+  const joinOperator = operator === 'AND' ? ' AND ' : ' OR ';
+  return `(${conditions.join(joinOperator)})`;
+}
+
+/**
  * Opens a file using the system's default application
  * @param filePath - Path to the file to open
  */
@@ -72,7 +139,8 @@ export async function searchByTitleSQLite(dbPath: string): Promise<void> {
         {
           type: 'input',
           name: 'searchTerm',
-          message: 'Enter a search term (will search in title and filename, empty to quit):',
+          message:
+            'Enter a search term (supports: "term1+term2", "term1 and term2", "term1 or term2", "quoted phrase", empty to quit):',
           validate: () => {
             return true; // Allow empty input to quit
           },
@@ -90,18 +158,21 @@ export async function searchByTitleSQLite(dbPath: string): Promise<void> {
     try {
       const db = new Database(dbPath);
 
-      // Search query with LIKE for partial matches
+      // Parse search query for advanced search
+      const { terms, operator } = parseSearchQuery(currentSearchTerm);
+      const whereClause = buildSearchWhereClause(terms, operator);
+
+      // Search query with advanced search capabilities
       const query = `
         SELECT id, file, type, title, author, file_path, created_at
         FROM ebooks
-        WHERE LOWER(title) LIKE LOWER(?) OR LOWER(file) LIKE LOWER(?)
+        WHERE ${whereClause}
         ORDER BY title
       `;
-      const searchPattern = `%${currentSearchTerm}%`;
 
       // Convert callback-based db.all to Promise
       const rows = await new Promise<SQLiteEbookRow[]>((resolve, reject) => {
-        db.all(query, [searchPattern, searchPattern], (err: Error | null, rows: SQLiteEbookRow[]) => {
+        db.all(query, [], (err: Error | null, rows: SQLiteEbookRow[]) => {
           if (err) {
             reject(err);
           } else {
@@ -113,6 +184,7 @@ export async function searchByTitleSQLite(dbPath: string): Promise<void> {
       console.log('\n🔍 SQLite Search Results');
       console.log('========================');
       console.log(`Search Term: "${currentSearchTerm}"`);
+      console.log(`Parsed as: ${terms.join(` ${operator.toLowerCase()} `)} (${operator})`);
       console.log(`Total matches: ${rows.length}`);
 
       if (rows.length > 0) {
@@ -165,7 +237,8 @@ export async function searchByTitleSQLite(dbPath: string): Promise<void> {
       {
         type: 'input',
         name: 'searchTerm',
-        message: 'Enter a new search term (empty to quit):',
+        message:
+          'Enter a new search term (supports: "term1+term2", "term1 and term2", "term1 or term2", "quoted phrase", empty to quit):',
         validate: () => {
           return true; // Allow empty input to quit
         },
@@ -197,7 +270,8 @@ export async function searchByTitle(dataFilePath: string, initialSearchTerm: str
       {
         type: 'input',
         name: 'searchTerm',
-        message: 'Enter a search term (will search in title and filename, empty to quit):',
+        message:
+          'Enter a search term (supports: "term1+term2", "term1 and term2", "term1 or term2", "quoted phrase", empty to quit):',
         validate: () => {
           return true; // Allow empty input to quit
         },
@@ -215,17 +289,31 @@ export async function searchByTitle(dataFilePath: string, initialSearchTerm: str
   while (continueSearching) {
     if (fs.existsSync(dataFilePath)) {
       const data = JSON.parse(fs.readFileSync(dataFilePath, 'utf-8')) as ProcessingResult[];
-      const lowerSearchTerm = currentSearchTerm.toLowerCase();
+
+      // Parse search query for advanced search
+      const { terms, operator } = parseSearchQuery(currentSearchTerm);
+      const lowerTerms = terms.map((term) => term.toLowerCase());
 
       const matches = data.filter((d) => {
         const title = (d.metadata as { title?: string })?.title?.toLowerCase() || '';
         const file = d.file.toLowerCase();
-        return title.includes(lowerSearchTerm) || file.includes(lowerSearchTerm);
+
+        if (operator === 'AND') {
+          // All terms must be present
+          return lowerTerms.every((term) => title.includes(term) || file.includes(term));
+        } else if (operator === 'OR') {
+          // At least one term must be present
+          return lowerTerms.some((term) => title.includes(term) || file.includes(term));
+        } else {
+          // PHRASE: exact match for single term or quoted phrase
+          return lowerTerms.some((term) => title.includes(term) || file.includes(term));
+        }
       });
 
       console.log('\n🔍 Search Results');
       console.log('=================');
       console.log(`Search Term: "${currentSearchTerm}"`);
+      console.log(`Parsed as: ${terms.join(` ${operator.toLowerCase()} `)} (${operator})`);
       console.log(`Total matches: ${matches.length}`);
 
       if (matches.length > 0) {
@@ -276,7 +364,8 @@ export async function searchByTitle(dataFilePath: string, initialSearchTerm: str
       {
         type: 'input',
         name: 'searchTerm',
-        message: 'Enter a new search term (empty to quit):',
+        message:
+          'Enter a new search term (supports: "term1+term2", "term1 and term2", "term1 or term2", "quoted phrase", empty to quit):',
         validate: () => {
           return true; // Allow empty input to quit
         },
