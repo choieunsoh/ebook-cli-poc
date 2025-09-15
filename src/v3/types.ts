@@ -23,6 +23,11 @@ export type UpdateType =
 export type AdvancedUpdateType = UpdateType | 'back';
 
 /**
+ * Quick action types for the main menu.
+ */
+export type QuickActionType = 'quick-process' | 'quick-search' | 'quick-summarize' | 'advanced';
+
+/**
  * Represents the complete set of user choices for the metadata extraction process.
  */
 export type UserChoices = {

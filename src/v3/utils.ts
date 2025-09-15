@@ -2,22 +2,12 @@
  * Utility functions for the ebook CLI tool.
  */
 
+import { QuickActionType, UpdateType } from './types';
+
 /**
  * Maps quick action selections to actual update types.
  */
-export function mapQuickActionToUpdateType(
-  quickAction: 'quick-process' | 'quick-search' | 'quick-summarize',
-):
-  | 'diff'
-  | 'full'
-  | 'append'
-  | 'summarize'
-  | 'search'
-  | 'import-sqlite'
-  | 'tokenize'
-  | 'configure-tokenization'
-  | 'run-sql'
-  | 'rank-tokens' {
+export function mapQuickActionToUpdateType(quickAction: Exclude<QuickActionType, 'advanced'>): UpdateType {
   switch (quickAction) {
     case 'quick-process':
       return 'diff';

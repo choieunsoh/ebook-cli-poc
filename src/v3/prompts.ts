@@ -3,12 +3,12 @@
  */
 
 import inquirer from 'inquirer';
-import { AdvancedUpdateType } from './types';
+import { AdvancedUpdateType, QuickActionType } from './types';
 
 /**
  * Prompts user to select from quick actions or advanced options.
  */
-export async function askQuickAction(): Promise<'quick-process' | 'quick-search' | 'quick-summarize' | 'advanced'> {
+export async function askQuickAction(): Promise<QuickActionType> {
   const quickActionChoices = [
     {
       name: '🔄 Process my ebooks (incremental)',
