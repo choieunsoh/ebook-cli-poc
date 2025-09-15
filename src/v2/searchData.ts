@@ -1,10 +1,185 @@
 /**
- * Module for searching data in data.json
+ * Module for searching data in data.json and SQLite database
  */
 
+import { exec } from 'child_process';
 import * as fs from 'fs';
 import inquirer from 'inquirer';
+import { promisify } from 'util';
 import { ProcessingResult } from './types';
+
+const execAsync = promisify(exec);
+
+interface SQLiteEbookRow {
+  id: number;
+  file: string;
+  type: string;
+  title: string | null;
+  author: string | null;
+  file_path: string;
+  created_at: string;
+}
+
+/**
+ * Opens a file using the system's default application
+ * @param filePath - Path to the file to open
+ */
+async function openFile(filePath: string): Promise<void> {
+  try {
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      console.log(`❌ File not found: ${filePath}`);
+      return;
+    }
+
+    let command: string;
+    const { platform } = process;
+
+    // Use appropriate command based on platform
+    if (platform === 'win32') {
+      command = `start "" "${filePath}"`;
+    } else if (platform === 'darwin') {
+      command = `open "${filePath}"`;
+    } else {
+      // Linux and other Unix-like systems
+      command = `xdg-open "${filePath}"`;
+    }
+
+    await execAsync(command);
+    console.log(`📖 Opened: ${filePath}`);
+  } catch (error) {
+    console.error(`❌ Failed to open file: ${(error as Error).message}`);
+  }
+}
+
+/**
+ * Searches for ebooks by title or filename in SQLite database.
+ * Continues prompting for new search terms until term is empty.
+ * @param dbPath - Path to the SQLite database file
+ */
+export async function searchByTitleSQLite(dbPath: string): Promise<void> {
+  let continueSearching = true;
+  let currentSearchTerm = '';
+
+  // Dynamic import for sqlite3 to handle optional dependency
+  const sqlite3 = await import('sqlite3');
+  const { Database } = sqlite3.default || sqlite3;
+
+  while (continueSearching) {
+    // Prompt for search term if not provided
+    if (!currentSearchTerm.trim()) {
+      const searchAnswer = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'searchTerm',
+          message: 'Enter a search term (will search in title and filename, empty to quit):',
+          validate: () => {
+            return true; // Allow empty input to quit
+          },
+        },
+      ]);
+      currentSearchTerm = searchAnswer.searchTerm.trim();
+
+      // Exit if term is empty
+      if (!currentSearchTerm) {
+        console.log('👋 Search session ended. Returning to main menu...');
+        return;
+      }
+    }
+
+    try {
+      const db = new Database(dbPath);
+
+      // Search query with LIKE for partial matches
+      const query = `
+        SELECT id, file, type, title, author, file_path, created_at
+        FROM ebooks
+        WHERE LOWER(title) LIKE LOWER(?) OR LOWER(file) LIKE LOWER(?)
+        ORDER BY title
+      `;
+      const searchPattern = `%${currentSearchTerm}%`;
+
+      // Convert callback-based db.all to Promise
+      const rows = await new Promise<SQLiteEbookRow[]>((resolve, reject) => {
+        db.all(query, [searchPattern, searchPattern], (err: Error | null, rows: SQLiteEbookRow[]) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(rows);
+          }
+        });
+      });
+
+      console.log('\n🔍 SQLite Search Results');
+      console.log('========================');
+      console.log(`Search Term: "${currentSearchTerm}"`);
+      console.log(`Total matches: ${rows.length}`);
+
+      if (rows.length > 0) {
+        console.log('\n📋 Matching Files:');
+        console.log('==================');
+        rows.forEach((row, index) => {
+          console.log(`${index + 1}. ${row.file} (${row.type})`);
+          console.log(`   Title: ${row.title || 'No title'}`);
+          console.log(`   Author: ${row.author || 'Unknown author'}`);
+          console.log(`   Path: ${row.file_path}`);
+          console.log(`   Database ID: ${row.id}`);
+          console.log('');
+        });
+
+        // Ask user if they want to open a file
+        const openAnswer = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'fileNumber',
+            message: 'Enter the number of the ebook to open (or press Enter to continue searching):',
+            validate: (input: string) => {
+              if (!input.trim()) return true; // Allow empty input
+              const num = parseInt(input);
+              if (isNaN(num) || num < 1 || num > rows.length) {
+                return `Please enter a number between 1 and ${rows.length}, or press Enter to skip.`;
+              }
+              return true;
+            },
+          },
+        ]);
+
+        if (openAnswer.fileNumber.trim()) {
+          const selectedIndex = parseInt(openAnswer.fileNumber) - 1;
+          const selectedFile = rows[selectedIndex];
+          await openFile(selectedFile.file_path);
+        }
+      } else {
+        console.log('No matches found.');
+      }
+
+      db.close();
+    } catch (error) {
+      console.error('❌ Database query error:', (error as Error).message);
+      continueSearching = false;
+      break;
+    }
+
+    // Prompt for new search term
+    const searchAnswer = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'searchTerm',
+        message: 'Enter a new search term (empty to quit):',
+        validate: () => {
+          return true; // Allow empty input to quit
+        },
+      },
+    ]);
+    currentSearchTerm = searchAnswer.searchTerm.trim();
+
+    // Exit if term is empty
+    if (!currentSearchTerm) {
+      continueSearching = false;
+      console.log('👋 Search session ended. Returning to main menu...');
+    }
+  }
+}
 
 /**
  * Searches for ebooks by title or filename containing the search term.
@@ -65,6 +240,29 @@ export async function searchByTitle(dataFilePath: string, initialSearchTerm: str
           console.log(`   Path: ${d.fileMetadata.path}`);
           console.log('');
         });
+
+        // Ask user if they want to open a file
+        const openAnswer = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'fileNumber',
+            message: 'Enter the number of the ebook to open (or press Enter to continue searching):',
+            validate: (input: string) => {
+              if (!input.trim()) return true; // Allow empty input
+              const num = parseInt(input);
+              if (isNaN(num) || num < 1 || num > matches.length) {
+                return `Please enter a number between 1 and ${matches.length}, or press Enter to skip.`;
+              }
+              return true;
+            },
+          },
+        ]);
+
+        if (openAnswer.fileNumber.trim()) {
+          const selectedIndex = parseInt(openAnswer.fileNumber) - 1;
+          const selectedFile = matches[selectedIndex];
+          await openFile(selectedFile.fileMetadata.path);
+        }
       } else {
         console.log('No matches found.');
       }

@@ -6,8 +6,8 @@
  * Represents the complete set of user choices for the metadata extraction process.
  */
 export type UserChoices = {
-  /** Type of update: 'diff' for incremental updates, 'full' for complete scan, 'append' for appending batch results, 'summarize' for summarizing data, 'search' for searching by title */
-  updateType: 'diff' | 'full' | 'append' | 'summarize' | 'search';
+  /** Type of update: 'diff' for incremental updates, 'full' for complete scan, 'append' for appending batch results, 'summarize' for summarizing data, 'search' for searching by title, 'import-sqlite' for importing to SQLite database */
+  updateType: 'diff' | 'full' | 'append' | 'summarize' | 'search' | 'import-sqlite';
   /** File types to process: 'both' for PDF+EPUB, or specific type */
   fileType: 'both' | 'pdf' | 'epub';
   /** Metadata extraction scope: 'file-metadata', 'metadata' only, or 'metadata+cover' for images too */
@@ -20,6 +20,8 @@ export type UserChoices = {
   displayWithoutMetadata?: boolean;
   /** Search term for search operation */
   searchTerm?: string;
+  /** Source for search operation: 'json' for data.json, 'sqlite' for SQLite database */
+  searchSource?: 'json' | 'sqlite';
 };
 
 /**

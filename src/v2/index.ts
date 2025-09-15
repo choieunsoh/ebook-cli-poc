@@ -10,7 +10,8 @@ import inquirer from 'inquirer';
 import * as path from 'path';
 import { appendBatchResults } from '../appendBatchResult';
 import { processFiles } from './fileProcessor';
-import { searchByTitle } from './searchData';
+import { searchByTitle, searchByTitleSQLite } from './searchData';
+import { importToSQLite } from './sqliteImport';
 import { summarizeData } from './summarizeData';
 import { UserChoices } from './types';
 
@@ -18,7 +19,7 @@ import { UserChoices } from './types';
  * Prompts user to select the type of update operation.
  * @returns Promise resolving to the chosen update type
  */
-async function askUpdateType(): Promise<'diff' | 'full' | 'append' | 'summarize' | 'search'> {
+async function askUpdateType(): Promise<'diff' | 'full' | 'append' | 'summarize' | 'search' | 'import-sqlite'> {
   const updateTypeChoices = [
     {
       name: 'Incremental Update (process only new or changed files)',
@@ -39,6 +40,10 @@ async function askUpdateType(): Promise<'diff' | 'full' | 'append' | 'summarize'
     {
       name: 'Search by Title (search ebooks by title or filename)',
       value: 'search' as const,
+    },
+    {
+      name: 'Import to SQLite (import data.json to SQLite database with deduplication)',
+      value: 'import-sqlite' as const,
     },
   ];
 
@@ -185,6 +190,34 @@ async function askDisplayWithoutMetadata(): Promise<boolean> {
 }
 
 /**
+ * Prompts user to choose the search source.
+ * @returns Promise resolving to the chosen search source
+ */
+async function askSearchSource(): Promise<'json' | 'sqlite'> {
+  const searchSourceChoices = [
+    {
+      name: 'Search from data.json (JSON file)',
+      value: 'json' as const,
+    },
+    {
+      name: 'Search from SQLite database',
+      value: 'sqlite' as const,
+    },
+  ];
+
+  const answer = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'searchSource',
+      message: 'Choose where to search for ebooks:',
+      choices: searchSourceChoices,
+    },
+  ]);
+
+  return answer.searchSource;
+}
+
+/**
  * Orchestrates the complete user interaction flow.
  * Asks all configuration questions in sequence.
  * @returns Promise resolving to complete user choices object
@@ -212,12 +245,21 @@ async function getUserChoice(): Promise<UserChoices> {
       displayWithoutMetadata,
     };
   } else if (updateType === 'search') {
+    const searchSource = await askSearchSource();
     choices = {
       updateType,
       fileType: 'both', // Not used for search
       metadataType: 'metadata', // Not used for search
       batchSize: 10, // Not used for search
+      searchSource,
       searchTerm: '', // Will be set by the search function
+    };
+  } else if (updateType === 'import-sqlite') {
+    choices = {
+      updateType,
+      fileType: 'both', // Not used for SQLite import
+      metadataType: 'metadata', // Not used for SQLite import
+      batchSize: 10, // Not used for SQLite import
     };
   } else {
     const fileType = await askFileType();
@@ -279,6 +321,8 @@ async function main() {
       updateTypeDisplay = 'Summarize Data';
     } else if (choices.updateType === 'search') {
       updateTypeDisplay = 'Search by Title';
+    } else if (choices.updateType === 'import-sqlite') {
+      updateTypeDisplay = 'Import to SQLite Database';
     } else {
       updateTypeDisplay =
         choices.updateType === 'diff' ? 'Incremental Update (new/changed files only)' : 'Full Scan (all files)';
@@ -307,7 +351,11 @@ async function main() {
     } else if (choices.updateType === 'summarize') {
       console.log(`Display without metadata: ${choices.displayWithoutMetadata ? 'Yes' : 'No'}`);
     } else if (choices.updateType === 'search') {
+      const searchSourceDisplay = choices.searchSource === 'sqlite' ? 'SQLite Database' : 'JSON File (data.json)';
+      console.log(`Search Source: ${searchSourceDisplay}`);
       console.log(`Interactive Search: Will prompt for search terms`);
+    } else if (choices.updateType === 'import-sqlite') {
+      console.log(`Database Import: Will import data.json to SQLite with deduplication`);
     } else {
       console.log(`File Types: ${fileTypeDisplay}`);
       console.log(`Extraction: ${metadataTypeDisplay}`);
@@ -320,7 +368,10 @@ async function main() {
     } else if (choices.updateType === 'summarize') {
       console.log(`   displayWithoutMetadata: ${choices.displayWithoutMetadata}`);
     } else if (choices.updateType === 'search') {
+      console.log(`   searchSource: '${choices.searchSource}'`);
       console.log(`   Interactive search mode`);
+    } else if (choices.updateType === 'import-sqlite') {
+      console.log(`   SQLite database import mode`);
     } else {
       console.log(`   fileType: '${choices.fileType}'`);
       console.log(`   metadataType: '${choices.metadataType}'`);
@@ -333,7 +384,14 @@ async function main() {
     } else if (choices.updateType === 'summarize') {
       summarizeData(dataFilePath, choices.displayWithoutMetadata || false);
     } else if (choices.updateType === 'search') {
-      await searchByTitle(dataFilePath, '');
+      if (choices.searchSource === 'sqlite') {
+        const dbPath = path.join(path.dirname(dataFilePath), 'ebooks.db');
+        await searchByTitleSQLite(dbPath);
+      } else {
+        await searchByTitle(dataFilePath, '');
+      }
+    } else if (choices.updateType === 'import-sqlite') {
+      await importToSQLite(dataFilePath);
     } else {
       await processFiles(choices);
     }
