@@ -10,13 +10,15 @@ import inquirer from 'inquirer';
 import * as path from 'path';
 import { appendBatchResults } from '../appendBatchResult';
 import { processFiles } from './fileProcessor';
+import { searchByTitle } from './searchData';
+import { summarizeData } from './summarizeData';
 import { UserChoices } from './types';
 
 /**
  * Prompts user to select the type of update operation.
  * @returns Promise resolving to the chosen update type
  */
-async function askUpdateType(): Promise<'diff' | 'full' | 'append'> {
+async function askUpdateType(): Promise<'diff' | 'full' | 'append' | 'summarize' | 'search'> {
   const updateTypeChoices = [
     {
       name: 'Incremental Update (process only new or changed files)',
@@ -29,6 +31,14 @@ async function askUpdateType(): Promise<'diff' | 'full' | 'append'> {
     {
       name: 'Append Batch Results (append batch files to data.json)',
       value: 'append' as const,
+    },
+    {
+      name: 'Summarize Data (read and summarize data.json)',
+      value: 'summarize' as const,
+    },
+    {
+      name: 'Search by Title (search ebooks by title or filename)',
+      value: 'search' as const,
     },
   ];
 
@@ -158,6 +168,23 @@ async function askBatchDir(): Promise<string> {
 }
 
 /**
+ * Prompts user to choose whether to display files without metadata.
+ * @returns Promise resolving to the choice
+ */
+async function askDisplayWithoutMetadata(): Promise<boolean> {
+  const answer = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'displayWithoutMetadata',
+      message: 'Do you want to display the list of files without metadata?',
+      default: false,
+    },
+  ]);
+
+  return answer.displayWithoutMetadata;
+}
+
+/**
  * Orchestrates the complete user interaction flow.
  * Asks all configuration questions in sequence.
  * @returns Promise resolving to complete user choices object
@@ -174,6 +201,23 @@ async function getUserChoice(): Promise<UserChoices> {
       metadataType: 'metadata', // Not used for append
       batchSize: 10, // Not used for append
       batchDir,
+    };
+  } else if (updateType === 'summarize') {
+    const displayWithoutMetadata = await askDisplayWithoutMetadata();
+    choices = {
+      updateType,
+      fileType: 'both', // Not used for summarize
+      metadataType: 'metadata', // Not used for summarize
+      batchSize: 10, // Not used for summarize
+      displayWithoutMetadata,
+    };
+  } else if (updateType === 'search') {
+    choices = {
+      updateType,
+      fileType: 'both', // Not used for search
+      metadataType: 'metadata', // Not used for search
+      batchSize: 10, // Not used for search
+      searchTerm: '', // Will be set by the search function
     };
   } else {
     const fileType = await askFileType();
@@ -231,6 +275,10 @@ async function main() {
     let updateTypeDisplay: string;
     if (choices.updateType === 'append') {
       updateTypeDisplay = 'Append Batch Results';
+    } else if (choices.updateType === 'summarize') {
+      updateTypeDisplay = 'Summarize Data';
+    } else if (choices.updateType === 'search') {
+      updateTypeDisplay = 'Search by Title';
     } else {
       updateTypeDisplay =
         choices.updateType === 'diff' ? 'Incremental Update (new/changed files only)' : 'Full Scan (all files)';
@@ -256,6 +304,10 @@ async function main() {
     if (choices.updateType === 'append') {
       console.log(`Batch Directory: ${choices.batchDir}`);
       console.log(`Data File: ${dataFilePath}`);
+    } else if (choices.updateType === 'summarize') {
+      console.log(`Display without metadata: ${choices.displayWithoutMetadata ? 'Yes' : 'No'}`);
+    } else if (choices.updateType === 'search') {
+      console.log(`Interactive Search: Will prompt for search terms`);
     } else {
       console.log(`File Types: ${fileTypeDisplay}`);
       console.log(`Extraction: ${metadataTypeDisplay}`);
@@ -265,6 +317,10 @@ async function main() {
     console.log(`   updateType: '${choices.updateType}'`);
     if (choices.updateType === 'append') {
       console.log(`   batchDir: '${choices.batchDir}'`);
+    } else if (choices.updateType === 'summarize') {
+      console.log(`   displayWithoutMetadata: ${choices.displayWithoutMetadata}`);
+    } else if (choices.updateType === 'search') {
+      console.log(`   Interactive search mode`);
     } else {
       console.log(`   fileType: '${choices.fileType}'`);
       console.log(`   metadataType: '${choices.metadataType}'`);
@@ -274,6 +330,10 @@ async function main() {
     // Process based on updateType
     if (choices.updateType === 'append') {
       appendBatchResults(choices.batchDir!, dataFilePath);
+    } else if (choices.updateType === 'summarize') {
+      summarizeData(dataFilePath, choices.displayWithoutMetadata || false);
+    } else if (choices.updateType === 'search') {
+      await searchByTitle(dataFilePath, '');
     } else {
       await processFiles(choices);
     }

@@ -6,8 +6,8 @@
  * Represents the complete set of user choices for the metadata extraction process.
  */
 export type UserChoices = {
-  /** Type of update: 'diff' for incremental updates, 'full' for complete scan, 'append' for appending batch results */
-  updateType: 'diff' | 'full' | 'append';
+  /** Type of update: 'diff' for incremental updates, 'full' for complete scan, 'append' for appending batch results, 'summarize' for summarizing data, 'search' for searching by title */
+  updateType: 'diff' | 'full' | 'append' | 'summarize' | 'search';
   /** File types to process: 'both' for PDF+EPUB, or specific type */
   fileType: 'both' | 'pdf' | 'epub';
   /** Metadata extraction scope: 'file-metadata', 'metadata' only, or 'metadata+cover' for images too */
@@ -16,6 +16,10 @@ export type UserChoices = {
   batchSize: number;
   /** Batches directory for append operation */
   batchDir?: string;
+  /** Whether to display list of files without metadata for summarize */
+  displayWithoutMetadata?: boolean;
+  /** Search term for search operation */
+  searchTerm?: string;
 };
 
 /**
