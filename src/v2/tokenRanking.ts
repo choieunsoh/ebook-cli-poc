@@ -134,8 +134,9 @@ function rankTokens(tokenCounts: Map<string, number>, topN?: number): TokenRanki
  * Displays token ranking results in a formatted way
  * @param rankings Array of token rankings
  * @param source Source of the data (JSON or SQLite)
+ * @param maxDisplay Optional limit for display (defaults to 50, use undefined for all)
  */
-function displayTokenRankings(rankings: TokenRanking[], source: string): void {
+function displayTokenRankings(rankings: TokenRanking[], source: string, maxDisplay: number = 50): void {
   console.log('\n📊 Token Occurrence Ranking');
   console.log('===========================');
   console.log(`Source: ${source}`);
@@ -152,7 +153,9 @@ function displayTokenRankings(rankings: TokenRanking[], source: string): void {
   console.log('🏆 Top Tokens by Occurrences:');
   console.log('─────────────────────────────');
 
-  rankings.slice(0, 50).forEach((ranking, index) => {
+  // Display all rankings if maxDisplay is undefined, otherwise limit to maxDisplay
+  const displayCount = maxDisplay === undefined ? rankings.length : Math.min(maxDisplay, rankings.length);
+  rankings.slice(0, displayCount).forEach((ranking, index) => {
     const rank = (index + 1).toString().padStart(3, ' ');
     const token = ranking.token.padEnd(20, ' ');
     const count = ranking.count.toString().padStart(6, ' ');
@@ -161,8 +164,8 @@ function displayTokenRankings(rankings: TokenRanking[], source: string): void {
     console.log(`${rank}. ${token} | ${count} uses | ${percentage}%`);
   });
 
-  if (rankings.length > 50) {
-    console.log(`\n... and ${rankings.length - 50} more tokens`);
+  if (rankings.length > displayCount) {
+    console.log(`\n... and ${rankings.length - displayCount} more tokens`);
   }
 
   // Show some statistics
@@ -193,7 +196,7 @@ export async function rankTokensFromJSON(dataFilePath: string, topN?: number): P
     const tokenCounts = countTokenFrequency(data);
     const rankings = rankTokens(tokenCounts, topN);
 
-    displayTokenRankings(rankings, 'JSON File (data.json)');
+    displayTokenRankings(rankings, 'JSON File (data.json)', topN);
   } catch (error) {
     console.error('❌ Error ranking tokens from JSON:', (error as Error).message);
   }
@@ -217,7 +220,7 @@ export async function rankTokensFromSQLite(dbPath: string, topN?: number): Promi
     const tokenCounts = await countTokenFrequencySQLite(dbPath);
     const rankings = rankTokens(tokenCounts, topN);
 
-    displayTokenRankings(rankings, 'SQLite Database');
+    displayTokenRankings(rankings, 'SQLite Database', topN);
   } catch (error) {
     console.error('❌ Error ranking tokens from SQLite:', (error as Error).message);
   }
@@ -251,7 +254,7 @@ export async function rankTokensInteractive(dataFilePath: string): Promise<void>
   const topNAnswer = await inquirer.default.prompt({
     type: 'number',
     name: 'topN',
-    message: 'How many top tokens to display? (leave empty for all)',
+    message: 'How many top tokens to display?',
     default: 100,
     validate: (value: number | undefined) => {
       if (value === undefined || value > 0) return true;

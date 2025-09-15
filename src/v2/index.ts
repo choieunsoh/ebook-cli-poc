@@ -84,6 +84,7 @@ async function askUpdateType(): Promise<
       name: 'updateType',
       message: 'Select the type of update to perform:',
       choices: updateTypeChoices,
+      pageSize: updateTypeChoices.length, // Show all options without pagination
     },
   ]);
 
@@ -116,6 +117,7 @@ async function askFileType(): Promise<'both' | 'pdf' | 'epub'> {
       name: 'fileType',
       message: 'Choose which file types to process:',
       choices: fileTypeChoices,
+      pageSize: fileTypeChoices.length,
     },
   ]);
 
@@ -148,6 +150,7 @@ async function askMetadataType(): Promise<'file-metadata' | 'metadata' | 'metada
       name: 'metadataType',
       message: 'Select what to extract from the ebooks:',
       choices: metadataTypeChoices,
+      pageSize: metadataTypeChoices.length,
     },
   ]);
 
@@ -242,6 +245,7 @@ async function askSearchSource(): Promise<'json' | 'sqlite'> {
       name: 'searchSource',
       message: 'Choose where to search for ebooks:',
       choices: searchSourceChoices,
+      pageSize: searchSourceChoices.length,
     },
   ]);
 
