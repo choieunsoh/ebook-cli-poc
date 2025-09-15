@@ -7,10 +7,14 @@
     "build": "tsc",
     "start": "yarn build && yarn v2",
     "v2": "node dist/v2/index.js",
+    "v3": "node dist/v3/index.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "clean": "rimraf dist",
+    "type-check": "tsc --noEmit",
+    "dev:v3": "yarn build && yarn v3"
   },
   "bin": {
     "pdf-cover": "./dist/cli/pdf-cover-cli.js"
