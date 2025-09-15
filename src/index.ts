@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import { createInterface } from 'readline';
-import { extractEpubMetadata } from './epubExtractor';
+import { extractEpubMetadata } from './epubMetadataExtractor';
 import { listEbookFiles } from './fileLister';
 import { extractPdfMetadata } from './pdfExtractor';
 import type { BookMetadata, Config, OutputData, ProcessingSummary } from './types';

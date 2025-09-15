@@ -5,7 +5,7 @@
 import * as fs from 'fs';
 import inquirer from 'inquirer';
 import * as path from 'path';
-import { extractEpubMetadata } from '../epubExtractor';
+import { extractEpubMetadata } from '../epubMetadataExtractor';
 import { extractPDFMetadata, isMetadataComplete } from './pdfMetadataExtractor';
 import type {
   BookMetadata,
