@@ -254,9 +254,9 @@ export async function importToSQLite(dataFilePath: string): Promise<void> {
   } catch (error) {
     if ((error as Error).message.includes('Cannot find module')) {
       console.log('❌ SQLite3 module not found. Please install it:');
-      console.log('   npm install sqlite3');
-      console.log('   or');
       console.log('   yarn add sqlite3');
+      console.log('   or');
+      console.log('   npm install sqlite3');
     } else {
       console.log(`❌ Error importing to SQLite: ${(error as Error).message}`);
     }

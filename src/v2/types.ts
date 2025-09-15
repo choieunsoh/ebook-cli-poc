@@ -6,7 +6,7 @@
  * Represents the complete set of user choices for the metadata extraction process.
  */
 export type UserChoices = {
-  /** Type of update: 'diff' for incremental updates, 'full' for complete scan, 'append' for appending batch results, 'summarize' for summarizing data, 'search' for searching by title, 'import-sqlite' for importing to SQLite database, 'tokenize' for tokenizing titles/filenames, 'configure-tokenization' for configuring tokenization settings */
+  /** Type of update: 'diff' for incremental updates, 'full' for complete scan, 'append' for appending batch results, 'summarize' for summarizing data, 'search' for searching by title, 'import-sqlite' for importing to SQLite database, 'tokenize' for tokenizing titles/filenames, 'configure-tokenization' for configuring tokenization settings, 'run-sql' for running custom SQL queries */
   updateType:
     | 'diff'
     | 'full'
@@ -15,7 +15,8 @@ export type UserChoices = {
     | 'search'
     | 'import-sqlite'
     | 'tokenize'
-    | 'configure-tokenization';
+    | 'configure-tokenization'
+    | 'run-sql';
   /** File types to process: 'both' for PDF+EPUB, or specific type */
   fileType: 'both' | 'pdf' | 'epub';
   /** Metadata extraction scope: 'file-metadata', 'metadata' only, or 'metadata+cover' for images too */
