@@ -102,6 +102,7 @@ async function handleDotCommand(
     console.log('  .schema <table> - Show schema for specific table');
     console.log('  .indexes    - Show all indexes');
     console.log('  .help       - Show this help message');
+    console.log('  back        - Return to main menu');
     console.log('  exit/quit   - Exit the SQL session');
   } else {
     console.log(`❌ Unknown dot command: ${command}`);
@@ -139,9 +140,9 @@ export async function runSQLQuery(): Promise<void> {
   console.log('   - Use .schema ebooks to see table structure');
   console.log('   - Use .indexes to see database indexes');
   console.log('   - Use .help to see all available commands');
+  console.log('   - Type "back" to return to main menu');
   console.log('   - Type "exit" or "quit" to finish');
   console.log('');
-
   try {
     // Dynamic import of sqlite3
     const sqlite3 = await import('sqlite3');
@@ -154,7 +155,7 @@ export async function runSQLQuery(): Promise<void> {
       const queryAnswer = await inquirer.prompt({
         type: 'input',
         name: 'query',
-        message: 'Enter SQL query (or "exit" to quit):',
+        message: 'Enter SQL query ("back" to return to main menu, "exit" or "quit" to finish):',
         validate: (input: string) => {
           if (!input.trim()) {
             return 'Query cannot be empty';
@@ -164,6 +165,13 @@ export async function runSQLQuery(): Promise<void> {
       });
 
       const query = queryAnswer.query.trim();
+
+      // Check for back navigation
+      if (query.toLowerCase() === 'back') {
+        console.log('⬅️  Returning to main menu...');
+        db.close();
+        return;
+      }
 
       if (query.toLowerCase() === 'exit' || query.toLowerCase() === 'quit') {
         continueQuerying = false;

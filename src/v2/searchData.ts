@@ -153,13 +153,19 @@ export async function searchByTitleSQLite(dbPath: string): Promise<void> {
           type: 'input',
           name: 'searchTerm',
           message:
-            'Enter a search term (supports: "term1+term2", "term1 and term2", "term1 or term2", "quoted phrase", empty to quit):',
+            'Enter a search term (supports: "term1+term2", "term1 and term2", "term1 or term2", "quoted phrase", "back" to return to main menu, empty to quit):',
           validate: () => {
             return true; // Allow empty input to quit
           },
         },
       ]);
       currentSearchTerm = searchAnswer.searchTerm.trim();
+
+      // Check for back navigation
+      if (currentSearchTerm.toLowerCase() === 'back') {
+        console.log('⬅️  Returning to main menu...');
+        return;
+      }
 
       // Exit if term is empty
       if (!currentSearchTerm) {
@@ -251,13 +257,19 @@ export async function searchByTitleSQLite(dbPath: string): Promise<void> {
         type: 'input',
         name: 'searchTerm',
         message:
-          'Enter a new search term (supports: "term1+term2", "term1 and term2", "term1 or term2", "quoted phrase", empty to quit):',
+          'Enter a new search term (supports: "term1+term2", "term1 and term2", "term1 or term2", "quoted phrase", "back" to return to main menu, empty to quit):',
         validate: () => {
           return true; // Allow empty input to quit
         },
       },
     ]);
     currentSearchTerm = searchAnswer.searchTerm.trim();
+
+    // Check for back navigation
+    if (currentSearchTerm.toLowerCase() === 'back') {
+      console.log('⬅️  Returning to main menu...');
+      return;
+    }
 
     // Exit if term is empty
     if (!currentSearchTerm) {
@@ -284,13 +296,19 @@ export async function searchByTitle(dataFilePath: string, initialSearchTerm: str
         type: 'input',
         name: 'searchTerm',
         message:
-          'Enter a search term (supports: "term1+term2", "term1 and term2", "term1 or term2", "quoted phrase", empty to quit):',
+          'Enter a search term (supports: "term1+term2", "term1 and term2", "term1 or term2", "quoted phrase", "back" to return to main menu, empty to quit):',
         validate: () => {
           return true; // Allow empty input to quit
         },
       },
     ]);
     currentSearchTerm = searchAnswer.searchTerm.trim();
+
+    // Check for back navigation
+    if (currentSearchTerm.toLowerCase() === 'back') {
+      console.log('⬅️  Returning to main menu...');
+      return;
+    }
 
     // Exit if term is empty
     if (!currentSearchTerm) {
@@ -392,13 +410,19 @@ export async function searchByTitle(dataFilePath: string, initialSearchTerm: str
         type: 'input',
         name: 'searchTerm',
         message:
-          'Enter a new search term (supports: "term1+term2", "term1 and term2", "term1 or term2", "quoted phrase", empty to quit):',
+          'Enter a new search term (supports: "term1+term2", "term1 and term2", "term1 or term2", "quoted phrase", "back" to return to main menu, empty to quit):',
         validate: () => {
           return true; // Allow empty input to quit
         },
       },
     ]);
     currentSearchTerm = searchAnswer.searchTerm.trim();
+
+    // Check for back navigation
+    if (currentSearchTerm.toLowerCase() === 'back') {
+      console.log('⬅️  Returning to main menu...');
+      return;
+    }
 
     // Exit if term is empty
     if (!currentSearchTerm) {
