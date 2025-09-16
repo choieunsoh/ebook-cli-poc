@@ -144,20 +144,6 @@ async function handleFileProcessingOperation(choices: UserChoices, dataFilePath:
  * Handles post-processing options like tokenization and SQLite import.
  */
 async function handlePostProcessing(dataFilePath: string): Promise<boolean> {
-  // Ask if user wants to run tokenization
-  const tokenizeAnswer = await inquirer.prompt({
-    type: 'confirm',
-    name: 'runTokenize',
-    message: 'Would you like to run tokenization on the processed data for enhanced search?',
-    default: true,
-  });
-
-  if (tokenizeAnswer.runTokenize) {
-    console.log('\n🔍 Starting tokenization of titles and filenames...');
-    await tokenizeData(dataFilePath);
-    console.log('✅ Tokenization complete!');
-  }
-
   // Ask if user wants to import to SQLite
   const sqliteAnswer = await inquirer.prompt({
     type: 'confirm',
@@ -170,6 +156,20 @@ async function handlePostProcessing(dataFilePath: string): Promise<boolean> {
     console.log('\n🗄️  Starting SQLite import...');
     await importToSQLite(dataFilePath);
     console.log('✅ SQLite import complete!');
+  }
+
+  // Ask if user wants to run tokenization
+  const tokenizeAnswer = await inquirer.prompt({
+    type: 'confirm',
+    name: 'runTokenize',
+    message: 'Would you like to run tokenization on the processed data for enhanced search?',
+    default: true,
+  });
+
+  if (tokenizeAnswer.runTokenize) {
+    console.log('\n🔍 Starting tokenization of titles and filenames...');
+    await tokenizeData(dataFilePath);
+    console.log('✅ Tokenization complete!');
   }
 
   return false; // Exit after processing
