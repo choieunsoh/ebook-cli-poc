@@ -87,13 +87,153 @@ function collectFilesToProcess(
       continue;
     }
 
-    const files = getAllFiles(folder, extensions, config.excludes, previousFiles);
+    const files = getAllFiles(folder, extensions, [...config.excludes, config.duplicateDir], previousFiles);
     filesToProcess.push(...files);
 
     totalFilesFound += files.length;
   }
 
   return { filesToProcess, totalFilesFound };
+}
+
+/**
+ * Handles duplicate files by moving them to the duplicate directory
+ */
+function handleDuplicateFiles(
+  filesToProcess: FileEntry[],
+  config: Config,
+  previousResults: ProcessingResult[] = [],
+): FileEntry[] {
+  // Handle both absolute and relative paths for duplicateDir
+  const duplicateDir = path.isAbsolute(config.duplicateDir)
+    ? config.duplicateDir
+    : path.join(process.cwd(), config.duplicateDir);
+
+  fs.mkdirSync(duplicateDir, { recursive: true });
+
+  // Create map of already processed files (by filename and by full path)
+  const processedFilesByName = new Map<string, ProcessingResult>();
+  const processedFilesByPath = new Map<string, ProcessingResult>();
+
+  for (const result of previousResults) {
+    const fileName = result.file.toLowerCase();
+    processedFilesByName.set(fileName, result);
+    processedFilesByPath.set(result.fileMetadata.path, result);
+  }
+
+  // Separate files into duplicates and unique files
+  const uniqueFiles: FileEntry[] = [];
+  let duplicatesMoved = 0;
+
+  for (const fileEntry of filesToProcess) {
+    const fileName = fileEntry.file.toLowerCase();
+    const fullPath = path.join(fileEntry.dir, fileEntry.file);
+
+    // Check if file was already processed (by path or by name)
+    const existingByPath = processedFilesByPath.get(fullPath);
+    const existingByName = processedFilesByName.get(fileName);
+
+    if (existingByPath) {
+      // Same file path already processed - move to duplicates
+      const sourcePath = fullPath;
+      const destPath = path.join(duplicateDir, fileEntry.file);
+
+      try {
+        // If destination file already exists, add a suffix
+        let finalDestPath = destPath;
+        let counter = 1;
+        while (fs.existsSync(finalDestPath)) {
+          const ext = path.extname(fileEntry.file);
+          const baseName = path.basename(fileEntry.file, ext);
+          finalDestPath = path.join(duplicateDir, `${baseName}_${counter}${ext}`);
+          counter++;
+        }
+
+        fs.renameSync(sourcePath, finalDestPath);
+        console.log(`📁 Moved duplicate (already processed): ${sourcePath} → ${finalDestPath}`);
+        duplicatesMoved++;
+      } catch (error) {
+        console.error(`❌ Failed to move duplicate ${sourcePath}: ${(error as Error).message}`);
+      }
+    } else if (existingByName) {
+      // Same filename already processed - move to duplicates
+      const sourcePath = fullPath;
+      const destPath = path.join(duplicateDir, fileEntry.file);
+
+      try {
+        // If destination file already exists, add a suffix
+        let finalDestPath = destPath;
+        let counter = 1;
+        while (fs.existsSync(finalDestPath)) {
+          const ext = path.extname(fileEntry.file);
+          const baseName = path.basename(fileEntry.file, ext);
+          finalDestPath = path.join(duplicateDir, `${baseName}_${counter}${ext}`);
+          counter++;
+        }
+
+        fs.renameSync(sourcePath, finalDestPath);
+        console.log(`📁 Moved duplicate (same name as processed): ${sourcePath} → ${finalDestPath}`);
+        duplicatesMoved++;
+      } catch (error) {
+        console.error(`❌ Failed to move duplicate ${sourcePath}: ${(error as Error).message}`);
+      }
+    } else {
+      // Check for duplicates among the current batch
+      uniqueFiles.push(fileEntry);
+    }
+  }
+
+  // Now handle duplicates within the remaining unique files (same logic as before)
+  const fileGroups = new Map<string, FileEntry[]>();
+  for (const fileEntry of uniqueFiles) {
+    const fileName = fileEntry.file.toLowerCase();
+    if (!fileGroups.has(fileName)) {
+      fileGroups.set(fileName, []);
+    }
+    fileGroups.get(fileName)!.push(fileEntry);
+  }
+
+  const finalUniqueFiles: FileEntry[] = [];
+
+  for (const [, files] of fileGroups) {
+    if (files.length === 1) {
+      // No duplicate, keep the file
+      finalUniqueFiles.push(files[0]);
+    } else {
+      // Handle duplicates: keep the first one, move the rest
+      finalUniqueFiles.push(files[0]); // Keep the first file
+
+      for (let i = 1; i < files.length; i++) {
+        const duplicate = files[i];
+        const sourcePath = path.join(duplicate.dir, duplicate.file);
+        const destPath = path.join(duplicateDir, duplicate.file);
+
+        try {
+          // If destination file already exists, add a suffix
+          let finalDestPath = destPath;
+          let counter = 1;
+          while (fs.existsSync(finalDestPath)) {
+            const ext = path.extname(duplicate.file);
+            const baseName = path.basename(duplicate.file, ext);
+            finalDestPath = path.join(duplicateDir, `${baseName}_${counter}${ext}`);
+            counter++;
+          }
+
+          fs.renameSync(sourcePath, finalDestPath);
+          console.log(`📁 Moved duplicate: ${sourcePath} → ${finalDestPath}`);
+          duplicatesMoved++;
+        } catch (error) {
+          console.error(`❌ Failed to move duplicate ${sourcePath}: ${(error as Error).message}`);
+        }
+      }
+    }
+  }
+
+  if (duplicatesMoved > 0) {
+    console.log(`\n📁 Moved ${duplicatesMoved} duplicate file(s) to ${duplicateDir}`);
+  }
+
+  return finalUniqueFiles;
 }
 
 /**
@@ -534,10 +674,11 @@ function getAllFiles(
           // Check if already processed and unchanged
           if (previousFiles) {
             const prevModified = previousFiles.get(fullPath);
-            if (prevModified && prevModified.getTime() === stat.mtime.getTime()) {
+            if (prevModified) {
               continue; // Skip unchanged file
             }
           }
+
           files.push({ file: fileName, dir: dir });
         }
       }
@@ -553,43 +694,53 @@ function getAllFiles(
  * Processes the ebook files based on user choices.
  * @param choices - The user's configuration choices
  * @param sessionTimestamp - The session timestamp for batch directory naming
+ * @param skipConfirmation - Whether to skip the confirmation prompt (for testing)
  */
-export async function processFiles(choices: UserChoices, sessionTimestamp?: string) {
+export async function processFiles(choices: UserChoices, sessionTimestamp?: string, skipConfirmation = false) {
   console.log('\n🔍 Scanning for files...');
 
   // Load configuration and previous data
   const config = loadConfiguration();
-  const previousResults = choices.updateType === 'diff' ? loadPreviousData(config) : [];
+  const previousResults = loadPreviousData(config); // Always load previous results for duplicate checking
   const previousFiles = choices.updateType === 'diff' ? createPreviousFilesMap(previousResults) : null;
 
   // Determine file extensions and collect files to process
   const extensions = determineExtensions(choices);
-  const { filesToProcess, totalFilesFound } = collectFilesToProcess(config, extensions, previousFiles);
+  const { filesToProcess: initialFilesToProcess, totalFilesFound } = collectFilesToProcess(
+    config,
+    extensions,
+    previousFiles,
+  );
 
-  if (filesToProcess.length === 0) {
+  if (initialFilesToProcess.length === 0) {
     console.log('ℹ️  No matching files found.');
     return;
   }
 
+  // Handle duplicate files
+  const filesToProcess = handleDuplicateFiles(initialFilesToProcess, config, previousResults);
+
   console.log(`📁 Found ${previousResults.length} previously processed file(s).`);
-  console.log(`📁 Found ${filesToProcess.length} file(s) to process.`);
+  console.log(`📁 Found ${filesToProcess.length} file(s) to process after duplicate handling.`);
   console.log(
     `📁 Processing all files in batches of ${choices.batchSize}, total of ${Math.ceil(filesToProcess.length / choices.batchSize)} ${Math.ceil(filesToProcess.length / choices.batchSize) === 1 ? 'batch' : 'batches'}.`,
   );
 
   // Ask for confirmation before proceeding with processing
-  const confirmationAnswer = await inquirer.prompt([
-    {
-      type: 'confirm',
-      name: 'proceed',
-      message: 'Do you want to proceed with processing these files?',
-      default: true,
-    },
-  ]);
+  if (!skipConfirmation) {
+    const confirmationAnswer = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'proceed',
+        message: 'Do you want to proceed with processing these files?',
+        default: true,
+      },
+    ]);
 
-  if (!confirmationAnswer.proceed) {
-    console.log('\n❌ Processing cancelled by user.');
-    return;
+    if (!confirmationAnswer.proceed) {
+      console.log('\n❌ Processing cancelled by user.');
+      return;
+    }
   }
 
   console.log('\n🚀 Starting processing...\n');

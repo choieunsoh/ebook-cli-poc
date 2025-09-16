@@ -89,6 +89,7 @@ export type Config = {
   outputDir: string;
   output: string;
   excludes: string[];
+  duplicateDir: string;
   timestampFormat: string;
   dataFile?: string;
   tokenization?: {
