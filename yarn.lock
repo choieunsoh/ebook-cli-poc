@@ -1607,6 +1607,7 @@ __metadata:
     eslint: "npm:^9.35.0"
     eslint-config-prettier: "npm:^10.1.8"
     figlet: "npm:^1.9.1"
+    flexsearch: "npm:^0.8.212"
     globals: "npm:^16.3.0"
     inquirer: "npm:^12.9.4"
     natural: "npm:^8.1.0"
@@ -1975,6 +1976,13 @@ __metadata:
   version: 3.3.3
   resolution: "flatted@npm:3.3.3"
   checksum: 10c0/e957a1c6b0254aa15b8cce8533e24165abd98fadc98575db082b786b5da1b7d72062b81bfdcd1da2f4d46b6ed93bec2434e62333e9b4261d79ef2e75a10dd538
+  languageName: node
+  linkType: hard
+
+"flexsearch@npm:^0.8.212":
+  version: 0.8.212
+  resolution: "flexsearch@npm:0.8.212"
+  checksum: 10c0/557a320fe028e694579d9f3f4cacd6acab6bcfa9101a63dbacf23ddbc872310a3370586a12007cf080ed2dfe3c99e6b21dd1e83697f2b4734722fbd43285d782
   languageName: node
   linkType: hard
 
