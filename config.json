@@ -5,6 +5,7 @@
   "excludes": [
     "H:\\E-Books\\excludes"
   ],
+  "duplicateDir": "H:\\E-Books\\duplicates",
   "outputDir": "output",
   "output": "books.json",
   "dataFile": "data.json",
