@@ -125,7 +125,7 @@ export class EbookSearch {
       skipLargeFiles = true,
       extractPartialContent = true,
       maxPages = 0, // 0 = unlimited pages
-      useBatchProcessing = true, // Enabled by default for better memory management
+      useBatchProcessing = true, // Enabled by default for both full and incremental updates
       batchSize = 10,
       batchDir = './batch-indexes',
       maxFiles = 100, // Default limit of 100 files
@@ -156,22 +156,6 @@ export class EbookSearch {
       throw new Error(`Could not load data file: ${actualDataFilePath}`);
     }
 
-    // Use batch processing if requested
-    if (useBatchProcessing) {
-      if (verbose) {
-        console.log(`Using batch processing with batch size ${batchSize}, output dir: ${batchDir}`);
-      }
-      return await this.performBatchRebuild(
-        dataFileContent,
-        dataFileReader,
-        verbose,
-        extractionOptions,
-        batchSize,
-        batchDir,
-        maxFiles,
-      );
-    }
-
     // Load existing index if it exists
     const indexExists = this.indexExists();
     if (indexExists && !forceFullRebuild) {
@@ -186,15 +170,53 @@ export class EbookSearch {
       forceFullRebuild || !indexExists || changeDetector.hasDataFileChanged(dataFileContent, indexMetadata);
 
     if (isFullRebuild) {
-      if (verbose) {
-        console.log('Performing full index rebuild...');
+      // Use batch processing if requested for full rebuilds
+      if (useBatchProcessing) {
+        if (verbose) {
+          console.log('Performing full index rebuild with batch processing...');
+        }
+        return await this.performBatchRebuild(
+          dataFileContent,
+          dataFileReader,
+          verbose,
+          extractionOptions,
+          batchSize,
+          batchDir,
+          maxFiles,
+        );
+      } else {
+        if (verbose) {
+          console.log('Performing full index rebuild...');
+        }
+        return await this.performFullRebuild(dataFileContent, dataFileReader, verbose, extractionOptions, maxFiles);
       }
-      return await this.performFullRebuild(dataFileContent, dataFileReader, verbose, extractionOptions, maxFiles);
     } else {
-      if (verbose) {
-        console.log('Performing incremental index update...');
+      // Use batch processing if requested for incremental updates
+      if (useBatchProcessing) {
+        if (verbose) {
+          console.log('Performing incremental index update with batch processing...');
+        }
+        return await this.performBatchIncrementalUpdate(
+          dataFileContent,
+          indexMetadata!,
+          verbose,
+          extractionOptions,
+          batchSize,
+          batchDir,
+          maxFiles,
+        );
+      } else {
+        if (verbose) {
+          console.log('Performing incremental index update...');
+        }
+        return await this.performIncrementalUpdate(
+          dataFileContent,
+          indexMetadata!,
+          verbose,
+          extractionOptions,
+          maxFiles,
+        );
       }
-      return await this.performIncrementalUpdate(dataFileContent, indexMetadata!, verbose, extractionOptions, maxFiles);
     }
   }
 
@@ -592,8 +614,174 @@ export class EbookSearch {
   }
 
   /**
-   * Performs a batch rebuild of the index
+   * Performs a batch incremental update of the index
    */
+  private async performBatchIncrementalUpdate(
+    dataFileContent: DataFileContent,
+    indexMetadata: IndexMetadata,
+    verbose: boolean,
+    extractionOptions: TextExtractionOptions,
+    batchSize: number,
+    batchDir: string,
+    maxFiles: number,
+  ): Promise<IncrementalBuildResult> {
+    const changeDetector = new ChangeDetector();
+    const changes = changeDetector.detectChanges(dataFileContent, indexMetadata);
+
+    // Limit the total number of files to process
+    const totalChanges = changes.added.length + changes.modified.length + changes.deleted.length;
+    if (totalChanges > maxFiles) {
+      if (verbose) {
+        console.log(`Limiting processing to ${maxFiles} files out of ${totalChanges} total changes`);
+      }
+      // Prioritize added files, then modified, then deleted
+      changes.added = changes.added.slice(0, maxFiles);
+      const remaining = maxFiles - changes.added.length;
+      if (remaining > 0) {
+        changes.modified = changes.modified.slice(0, remaining);
+        const stillRemaining = remaining - changes.modified.length;
+        if (stillRemaining > 0) {
+          changes.deleted = changes.deleted.slice(0, stillRemaining);
+        } else {
+          changes.deleted = [];
+        }
+      } else {
+        changes.modified = [];
+        changes.deleted = [];
+      }
+    }
+
+    if (verbose) {
+      console.log(
+        `Changes detected: +${changes.added.length} added, ~${changes.modified.length} modified, -${changes.deleted.length} deleted, =${changes.unchanged} unchanged`,
+      );
+    }
+
+    // Create batch directory if it doesn't exist
+    if (!fs.existsSync(batchDir)) {
+      fs.mkdirSync(batchDir, { recursive: true });
+    }
+
+    // Clear any existing batch files
+    this.clearBatchFiles(batchDir);
+
+    // Combine all changed entries for batch processing
+    const changedEntries = [...changes.added, ...changes.modified];
+    const batchGenerator = this.createBatchGenerator(changedEntries, batchSize);
+    const batchFiles: string[] = [];
+    let totalProcessed = 0;
+    let batchIndex = 0;
+
+    for (const batch of batchGenerator) {
+      batchIndex++;
+      const batchFileName = `batch-${batchIndex.toString().padStart(3, '0')}.json`;
+      const batchFilePath = path.join(batchDir, batchFileName);
+
+      if (verbose) {
+        console.log(`Processing batch ${batchIndex} (${batch.length} files) -> ${batchFileName}`);
+      }
+
+      // Create a temporary index for this batch
+      const batchIndexInstance = new SearchIndex();
+      const batchDocuments: SearchDocument[] = [];
+
+      for (const entry of batch) {
+        try {
+          if (verbose) {
+            console.log(`  Processing: ${path.basename(entry.fileMetadata.path)}`);
+          }
+
+          const textResult = await extractTextFromFile(entry.fileMetadata.path, extractionOptions);
+          if (textResult.error) {
+            if (verbose) {
+              console.warn(`  Failed to extract text from ${entry.fileMetadata.path}: ${textResult.error}`);
+            }
+            continue;
+          }
+
+          const docId = this.generateDocumentId(entry.fileMetadata.path);
+          const doc: SearchDocument = {
+            id: docId,
+            content: textResult.text,
+            filePath: entry.fileMetadata.path,
+            type: entry.type === 'pdf' ? 'pdf' : 'epub',
+            title: this.extractTitleFromEntry(entry),
+            author: this.extractAuthorFromEntry(entry),
+          };
+
+          batchDocuments.push(doc);
+          totalProcessed++;
+
+          if (verbose) {
+            console.log(`    Indexed ${textResult.wordCount || 0} words`);
+          }
+        } catch (error) {
+          if (verbose) {
+            console.error(`  Error processing ${entry.fileMetadata.path}:`, error);
+          }
+        }
+      }
+
+      // Add documents to batch index and save
+      batchIndexInstance.addDocumentsBatch(batchDocuments);
+      await batchIndexInstance.exportToFile(batchFilePath);
+      batchFiles.push(batchFilePath);
+
+      if (verbose) {
+        console.log(`  Batch ${batchIndex} saved: ${batchDocuments.length} documents`);
+      }
+    }
+
+    // Merge all batch indexes into the main index
+    if (verbose) {
+      console.log(`Merging ${batchFiles.length} batch indexes...`);
+    }
+
+    for (const batchFile of batchFiles) {
+      if (verbose) {
+        console.log(`Merging batch: ${path.basename(batchFile)}`);
+      }
+
+      try {
+        // Read batch file directly as JSON
+        const batchData = JSON.parse(await fs.promises.readFile(batchFile, 'utf-8'));
+        this.index.addDocumentsBatch(batchData.documents);
+      } catch (error) {
+        console.error(`Failed to merge batch ${batchFile}:`, error);
+      }
+    }
+
+    // Process deleted files
+    if (changes.deleted.length > 0) {
+      const deletedIds = changes.deleted.map((filePath) => this.generateDocumentId(filePath));
+      this.index.removeDocumentsBatch(deletedIds);
+
+      if (verbose) {
+        console.log(`Removed ${changes.deleted.length} deleted files from index`);
+      }
+    }
+
+    // Update metadata
+    this.index.updateMetadata(dataFileContent.hash);
+
+    // Clean up batch files
+    this.clearBatchFiles(batchDir);
+
+    const totalProcessedIncludingDeletes = totalProcessed + changes.deleted.length;
+
+    if (verbose) {
+      console.log(`Batch incremental update completed: ${totalProcessedIncludingDeletes} files processed`);
+    }
+
+    return {
+      added: totalProcessed,
+      modified: 0, // In batch mode, we don't distinguish between added and modified
+      deleted: changes.deleted.length,
+      unchanged: changes.unchanged,
+      totalProcessed: totalProcessedIncludingDeletes,
+      isFullRebuild: false,
+    };
+  }
   private async performBatchRebuild(
     dataFileContent: DataFileContent,
     dataFileReader: DataFileReader,
