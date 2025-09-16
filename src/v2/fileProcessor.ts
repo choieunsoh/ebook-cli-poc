@@ -18,6 +18,14 @@ import type {
   UserChoices,
 } from './types';
 
+// Global error handler for unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🚨 Unhandled Promise Rejection detected:');
+  console.error('Reason:', reason);
+  console.error('Promise:', promise);
+  // Don't exit the process, just log the error
+});
+
 /**
  * Loads configuration from config.json
  */
@@ -259,79 +267,110 @@ async function* processFilesBatchGenerator(
     let processedCount = i;
 
     for (const entry of batch) {
-      processedCount++;
-      const filePath = path.join(entry.dir, entry.file);
-      console.log(`📖 Processing item ${processedCount}/${filesToProcess.length}: ${entry.file}`);
+      try {
+        processedCount++;
+        const filePath = path.join(entry.dir, entry.file);
+        console.log(`📖 Processing item ${processedCount}/${filesToProcess.length}: ${entry.file}`);
 
-      // Get file metadata
-      const stats = fs.statSync(filePath);
-      const fileMetadata: FileMetadata = {
-        size: stats.size,
-        created: stats.birthtime,
-        modified: stats.mtime,
-        accessed: stats.atime,
-        path: filePath,
-      };
+        // Get file metadata
+        const stats = fs.statSync(filePath);
+        const fileMetadata: FileMetadata = {
+          size: stats.size,
+          created: stats.birthtime,
+          modified: stats.mtime,
+          accessed: stats.atime,
+          path: filePath,
+        };
 
-      let metadata: BookMetadata | null = null;
+        let metadata: BookMetadata | null = null;
 
-      if (metadataType !== 'file-metadata') {
-        if (path.extname(entry.file).toLowerCase() === '.pdf') {
-          const timeoutPromise = new Promise<BookMetadata | null>(
-            (resolve) => setTimeout(() => resolve(null), 60000), // 60 second timeout
-          );
-          try {
-            metadata = await Promise.race([extractPDFMetadata(filePath), timeoutPromise]);
-            if (metadata && isMetadataComplete(metadata)) {
-              console.log(
-                `   ✅ Metadata extracted: ${metadata.title || 'Unknown Title'} by ${metadata.author || 'Unknown Author'}`,
-              );
-            } else {
-              console.log(`   ⚠️  Failed to extract metadata or timed out.`);
-            }
-          } catch (error) {
-            console.log(`   ❌ Error processing PDF: ${(error as Error).message}`);
-            metadata = null;
-          }
-        } else if (path.extname(entry.file).toLowerCase() === '.epub') {
-          const timeoutPromise = new Promise<{ metadata: BookMetadata | null; imagePath?: string; error?: string }>(
-            (resolve) => setTimeout(() => resolve({ metadata: null, error: 'Timeout' }), 60000), // 60 second timeout
-          );
-          try {
-            const epubResult = await Promise.race([
-              extractEpubMetadata(filePath, metadataType === 'metadata+cover'),
-              timeoutPromise,
-            ]);
-            if (epubResult.metadata) {
-              metadata = epubResult.metadata;
-              console.log(
-                `   ✅ Metadata extracted: ${metadata.title || 'Unknown Title'} by ${(metadata as EPUBMetadata).creator || 'Unknown Creator'}`,
-              );
-              if (epubResult.imagePath) {
-                console.log(`   🖼️  Cover image extracted: ${epubResult.imagePath}`);
+        if (metadataType !== 'file-metadata') {
+          if (path.extname(entry.file).toLowerCase() === '.pdf') {
+            const timeoutPromise = new Promise<BookMetadata | null>(
+              (resolve) => setTimeout(() => resolve(null), 60000), // 60 second timeout
+            );
+
+            try {
+              // Wrap the PDF extraction in a try-catch to handle any library-specific errors
+              const extractPromise = (async () => {
+                try {
+                  return await extractPDFMetadata(filePath);
+                } catch (extractError) {
+                  console.error(`   ❌ PDF extraction error for ${entry.file}:`, extractError);
+                  return null;
+                }
+              })();
+
+              metadata = await Promise.race([extractPromise, timeoutPromise]);
+
+              if (metadata && isMetadataComplete(metadata)) {
+                console.log(
+                  `   ✅ Metadata extracted: ${metadata.title || 'Unknown Title'} by ${metadata.author || 'Unknown Author'}`,
+                );
+              } else {
+                console.log(`   ⚠️  Failed to extract metadata or timed out.`);
               }
-            } else {
-              console.log(`   ⚠️  Failed to extract metadata or timed out.`);
-              if (epubResult.error) {
-                console.log(`      Error: ${epubResult.error}`);
-              }
+            } catch (error) {
+              console.error(`   ❌ Unexpected error processing PDF ${entry.file}:`, error);
+              metadata = null;
             }
-          } catch (error) {
-            console.log(`   ❌ Error processing EPUB: ${(error as Error).message}`);
+          } else if (path.extname(entry.file).toLowerCase() === '.epub') {
+            const timeoutPromise = new Promise<{ metadata: BookMetadata | null; imagePath?: string; error?: string }>(
+              (resolve) => setTimeout(() => resolve({ metadata: null, error: 'Timeout' }), 60000), // 60 second timeout
+            );
+            try {
+              const epubResult = await Promise.race([
+                extractEpubMetadata(filePath, metadataType === 'metadata+cover'),
+                timeoutPromise,
+              ]);
+              if (epubResult.metadata) {
+                metadata = epubResult.metadata;
+                console.log(
+                  `   ✅ Metadata extracted: ${metadata.title || 'Unknown Title'} by ${(metadata as EPUBMetadata).creator || 'Unknown Creator'}`,
+                );
+                if (epubResult.imagePath) {
+                  console.log(`   🖼️  Cover image extracted: ${epubResult.imagePath}`);
+                }
+              } else {
+                console.log(`   ⚠️  Failed to extract metadata or timed out.`);
+                if (epubResult.error) {
+                  console.log(`      Error: ${epubResult.error}`);
+                }
+              }
+            } catch (error) {
+              console.error(`   ❌ Unexpected error processing EPUB ${entry.file}:`, error);
+              metadata = null;
+            }
           }
+        } else {
+          console.log(`   📄 File metadata extracted (ebook metadata skipped)`);
         }
-      } else {
-        console.log(`   📄 File metadata extracted (ebook metadata skipped)`);
+
+        const result: ProcessingResult = {
+          file: entry.file,
+          type: path.extname(entry.file).toLowerCase() === '.pdf' ? 'pdf' : 'epub',
+          fileMetadata,
+          metadata,
+        };
+
+        batchResults.push(result);
+      } catch (fileError) {
+        console.error(`🚨 Critical error processing file ${entry.file}:`, fileError);
+        // Create a result with null metadata to indicate failure
+        const errorResult: ProcessingResult = {
+          file: entry.file,
+          type: path.extname(entry.file).toLowerCase() === '.pdf' ? 'pdf' : 'epub',
+          fileMetadata: {
+            size: 0,
+            created: new Date(),
+            modified: new Date(),
+            accessed: new Date(),
+            path: path.join(entry.dir, entry.file),
+          },
+          metadata: null,
+        };
+        batchResults.push(errorResult);
       }
-
-      const result: ProcessingResult = {
-        file: entry.file,
-        type: path.extname(entry.file).toLowerCase() === '.pdf' ? 'pdf' : 'epub',
-        fileMetadata,
-        metadata,
-      };
-
-      batchResults.push(result);
     }
 
     // Save batch results incrementally
