@@ -164,5 +164,6 @@ build/
 
 output/
 images/
+batch-indexes/
 
 search-index.json
