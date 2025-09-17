@@ -56,7 +56,7 @@ export function tokenizeTextAdvanced(text: string): TokenizationResult {
 }
 
 /**
- * Tokenizes text for search indexing (optimized for search)
+ * Tokenizes text for search indexing (optimized for search with stop word filtering)
  */
 export function tokenizeForIndexing(text: string): string[] {
   const result = tokenizeTextAdvanced(text);

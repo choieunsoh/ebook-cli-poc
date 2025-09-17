@@ -3,13 +3,15 @@
  */
 
 import * as fs from 'fs';
+import * as zlib from 'zlib';
 import { tokenizeForIndexing } from './tokenizer';
 
 export interface SearchDocument {
   id: string;
   title?: string;
   author?: string;
-  content: string;
+  excerpt?: string; // New field for content excerpts (smaller index size)
+  content?: string; // Legacy field for backward compatibility
   filePath: string;
   type: 'pdf' | 'epub';
 }
@@ -79,8 +81,9 @@ export class SearchIndex {
   addDocument(doc: SearchDocument): void {
     this.documents.set(doc.id, doc);
 
-    // Tokenize and index content
-    const tokens = tokenizeForIndexing(doc.content);
+    // Tokenize and index excerpt content (prefer excerpt, fallback to content for backward compatibility)
+    const textToIndex = doc.excerpt || doc.content || '';
+    const tokens = tokenizeForIndexing(textToIndex);
     const uniqueTokens = new Set(tokens);
 
     for (const token of uniqueTokens) {
@@ -163,8 +166,9 @@ export class SearchIndex {
       const doc = this.documents.get(docId);
       if (!doc) continue;
 
-      // Create excerpt from content around the first match
-      const excerpt = this.createExcerpt(doc.content, query);
+      // Create excerpt from stored excerpt/content around the first match
+      const textForExcerpt = doc.excerpt || doc.content || '';
+      const excerpt = this.createExcerpt(textForExcerpt, query);
 
       results.push({
         id: doc.id,
@@ -184,23 +188,26 @@ export class SearchIndex {
   }
 
   /**
-   * Creates a text excerpt around the search query
+   * Creates a text excerpt around the search query from stored excerpt
    */
-  private createExcerpt(content: string, query: string, contextLength: number = 100): string {
-    const lowerContent = content.toLowerCase();
+  private createExcerpt(excerpt: string, query: string, contextLength: number = 100): string {
+    const lowerExcerpt = excerpt.toLowerCase();
     const lowerQuery = query.toLowerCase();
-    const queryIndex = lowerContent.indexOf(lowerQuery);
+    const queryIndex = lowerExcerpt.indexOf(lowerQuery);
 
-    if (queryIndex === -1) return '';
+    if (queryIndex === -1) {
+      // If query not found in excerpt, return beginning of excerpt
+      return excerpt.length > contextLength * 2 ? excerpt.substring(0, contextLength * 2) + '...' : excerpt;
+    }
 
     const start = Math.max(0, queryIndex - contextLength);
-    const end = Math.min(content.length, queryIndex + query.length + contextLength);
+    const end = Math.min(excerpt.length, queryIndex + query.length + contextLength);
 
-    let excerpt = content.substring(start, end);
-    if (start > 0) excerpt = '...' + excerpt;
-    if (end < content.length) excerpt = excerpt + '...';
+    let excerptSnippet = excerpt.substring(start, end);
+    if (start > 0) excerptSnippet = '...' + excerptSnippet;
+    if (end < excerpt.length) excerptSnippet = excerptSnippet + '...';
 
-    return excerpt;
+    return excerptSnippet;
   }
 
   /**
@@ -218,7 +225,14 @@ export class SearchIndex {
   }
 
   /**
-   * Exports the index to a file
+   * Gets all documents
+   */
+  getAllDocuments(): SearchDocument[] {
+    return Array.from(this.documents.values());
+  }
+
+  /**
+   * Exports the index to a file (compressed)
    */
   async exportToFile(filePath: string): Promise<void> {
     const data: IndexData = {
@@ -228,18 +242,29 @@ export class SearchIndex {
     };
 
     const jsonData = JSON.stringify(data, null, 2);
-    await fs.promises.writeFile(filePath, jsonData, 'utf-8');
+    const compressedData = zlib.gzipSync(jsonData);
+    await fs.promises.writeFile(filePath, compressedData);
   }
 
   /**
-   * Imports the index from a file
+   * Imports the index from a file (handles both compressed and uncompressed)
    */
   async importFromFile(filePath: string): Promise<void> {
     if (!fs.existsSync(filePath)) {
       throw new Error(`Index file not found: ${filePath}`);
     }
 
-    const jsonData = await fs.promises.readFile(filePath, 'utf-8');
+    const fileData = await fs.promises.readFile(filePath);
+    let jsonData: string;
+
+    // Try to decompress, if it fails assume it's uncompressed JSON
+    try {
+      jsonData = zlib.gunzipSync(fileData).toString('utf-8');
+    } catch {
+      // If decompression fails, assume it's uncompressed JSON
+      jsonData = fileData.toString('utf-8');
+    }
+
     const data: IndexData = JSON.parse(jsonData);
 
     // Clear existing data

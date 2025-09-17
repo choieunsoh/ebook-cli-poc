@@ -161,13 +161,13 @@ program
 program
   .command('search')
   .description('Search the index for matching ebooks')
-  .requiredOption('-q, --query <string>', 'search query (required)')
+  .argument('<query>', 'search query')
   .option('-i, --index-file <path>', 'path to search index file', './search-index.json')
   .option('-l, --limit <number>', 'maximum number of results to return', '10')
   .option('-f, --fuzzy', 'enable fuzzy matching for approximate searches')
   .option('-v, --verbose', 'enable verbose output')
-  .action(async (options) => {
-    const { query, indexFile, limit, fuzzy, verbose } = options;
+  .action(async (query, options) => {
+    const { indexFile, limit, fuzzy, verbose } = options;
 
     try {
       const search = new EbookSearch(indexFile);

@@ -8,6 +8,8 @@
     "start": "yarn build && yarn v2",
     "v2": "node dist/v2/index.js",
     "v3": "node dist/v3/index.js",
+    "search": "node dist/cli/search-cli.js search",
+    "update": "node dist/cli/search-cli.js update",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
@@ -17,7 +19,8 @@
     "dev:v3": "yarn build && yarn v3"
   },
   "bin": {
-    "pdf-cover": "./dist/cli/pdf-cover-cli.js"
+    "pdf-cover": "./dist/cli/pdf-cover-cli.js",
+    "ebook": "./dist/cli/search-cli.js"
   },
   "keywords": [],
   "author": "",

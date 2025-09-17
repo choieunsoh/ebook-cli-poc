@@ -59,6 +59,17 @@ export class EbookSearch {
   }
 
   /**
+   * Generates an excerpt from full text content for indexing
+   */
+  private generateExcerpt(text: string, maxLength: number = 2000): string {
+    if (text.length <= maxLength) {
+      return text;
+    }
+    // Take the first part of the text as excerpt
+    return text.substring(0, maxLength) + '...';
+  }
+
+  /**
    * Builds the search index from ebook files
    */
   async buildIndex(ebookFiles: string[], options: { verbose?: boolean } = {}): Promise<void> {
@@ -87,7 +98,7 @@ export class EbookSearch {
         const docId = this.generateDocumentId(filePath);
         const doc: SearchDocument = {
           id: docId,
-          content: textResult.text,
+          content: textResult.text, // Store full content for academic/research use
           filePath,
           type: path.extname(filePath).toLowerCase() === '.pdf' ? 'pdf' : 'epub',
           // Note: In a full implementation, you'd extract title/author from metadata
@@ -120,15 +131,15 @@ export class EbookSearch {
       dataFilePath,
       verbose = false,
       forceFullRebuild = false,
-      maxFileSizeMB = 100, // Increased default to be more permissive
-      maxMemoryUsageMB = 2048, // Increased to 2GB for better performance
-      skipLargeFiles = true,
-      extractPartialContent = true,
+      maxFileSizeMB = 500, // Increased for academic documents
+      maxMemoryUsageMB = 4096, // Increased to 4GB for full text indexing
+      skipLargeFiles = false, // Don't skip large files for academic use
+      extractPartialContent = false, // Extract full content for research
       maxPages = 0, // 0 = unlimited pages
       useBatchProcessing = true, // Enabled by default for both full and incremental updates
-      batchSize = 10,
+      batchSize = 5, // Smaller batches for memory management
       batchDir = './batch-indexes',
-      maxFiles = 100, // Default limit of 100 files
+      maxFiles = 100, // Default limit for processing
     } = options;
 
     const extractionOptions: TextExtractionOptions = {
@@ -423,7 +434,7 @@ export class EbookSearch {
         const docId = this.generateDocumentId(entry.fileMetadata.path);
         const doc: SearchDocument = {
           id: docId,
-          content: textResult.text,
+          content: textResult.text, // Full content for academic/research
           filePath: entry.fileMetadata.path,
           type: entry.type === 'pdf' ? 'pdf' : 'epub',
           title: this.extractTitleFromEntry(entry),
@@ -528,7 +539,7 @@ export class EbookSearch {
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
             id: docId,
-            content: textResult.text,
+            content: textResult.text, // Full content for academic/research
             filePath: entry.fileMetadata.path,
             type: entry.type === 'pdf' ? 'pdf' : 'epub',
             title: this.extractTitleFromEntry(entry),
@@ -566,7 +577,7 @@ export class EbookSearch {
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
             id: docId,
-            content: textResult.text,
+            content: textResult.text, // Full content for academic/research
             filePath: entry.fileMetadata.path,
             type: entry.type === 'pdf' ? 'pdf' : 'epub',
             title: this.extractTitleFromEntry(entry),
@@ -671,6 +682,7 @@ export class EbookSearch {
     const batchFiles: string[] = [];
     let totalProcessed = 0;
     let batchIndex = 0;
+    const totalFiles = Math.min(changedEntries.length, maxFiles);
 
     for (const batch of batchGenerator) {
       batchIndex++;
@@ -688,7 +700,7 @@ export class EbookSearch {
       for (const entry of batch) {
         try {
           if (verbose) {
-            console.log(`  Processing: ${path.basename(entry.fileMetadata.path)}`);
+            console.log(`Processing (${totalProcessed + 1}/${totalFiles}): ${path.basename(entry.fileMetadata.path)}`);
           }
 
           const textResult = await extractTextFromFile(entry.fileMetadata.path, extractionOptions);
@@ -702,7 +714,7 @@ export class EbookSearch {
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
             id: docId,
-            content: textResult.text,
+            content: textResult.text, // Full content for academic/research
             filePath: entry.fileMetadata.path,
             type: entry.type === 'pdf' ? 'pdf' : 'epub',
             title: this.extractTitleFromEntry(entry),
@@ -743,9 +755,11 @@ export class EbookSearch {
       }
 
       try {
-        // Read batch file directly as JSON
-        const batchData = JSON.parse(await fs.promises.readFile(batchFile, 'utf-8'));
-        this.index.addDocumentsBatch(batchData.documents);
+        // Create a temporary index instance to load the compressed batch file
+        const tempIndex = new SearchIndex();
+        await tempIndex.importFromFile(batchFile);
+        const documents = tempIndex.getAllDocuments();
+        this.index.addDocumentsBatch(documents);
       } catch (error) {
         console.error(`Failed to merge batch ${batchFile}:`, error);
       }
@@ -812,6 +826,7 @@ export class EbookSearch {
     const batchFiles: string[] = [];
     let totalProcessed = 0;
     let batchIndex = 0;
+    const totalFiles = limitedEntries.length;
 
     for (const batch of batchGenerator) {
       batchIndex++;
@@ -829,7 +844,7 @@ export class EbookSearch {
       for (const entry of batch) {
         try {
           if (verbose) {
-            console.log(`  Processing: ${path.basename(entry.fileMetadata.path)}`);
+            console.log(`Processing (${totalProcessed + 1}/${totalFiles}): ${path.basename(entry.fileMetadata.path)}`);
           }
 
           const textResult = await extractTextFromFile(entry.fileMetadata.path, extractionOptions);
@@ -843,7 +858,7 @@ export class EbookSearch {
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
             id: docId,
-            content: textResult.text,
+            content: textResult.text, // Full content for academic/research
             filePath: entry.fileMetadata.path,
             type: entry.type === 'pdf' ? 'pdf' : 'epub',
             title: this.extractTitleFromEntry(entry),
@@ -922,9 +937,11 @@ export class EbookSearch {
       }
 
       try {
-        // Read batch file directly as JSON
-        const batchData = JSON.parse(await fs.promises.readFile(batchFile, 'utf-8'));
-        this.index.addDocumentsBatch(batchData.documents);
+        // Create a temporary index instance to load the compressed batch file
+        const tempIndex = new SearchIndex();
+        await tempIndex.importFromFile(batchFile);
+        const documents = tempIndex.getAllDocuments();
+        this.index.addDocumentsBatch(documents);
       } catch (error) {
         console.error(`Failed to merge batch ${batchFile}:`, error);
       }
