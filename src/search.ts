@@ -98,7 +98,8 @@ export class EbookSearch {
         const docId = this.generateDocumentId(filePath);
         const doc: SearchDocument = {
           id: docId,
-          content: textResult.text, // Store full content for academic/research use
+          excerpt: this.generateExcerpt(textResult.text, 2000), // Store excerpt for display
+          content: textResult.text.length > 50000 ? textResult.text.substring(0, 50000) + '...' : textResult.text, // Truncate for storage but index full content
           filePath,
           type: path.extname(filePath).toLowerCase() === '.pdf' ? 'pdf' : 'epub',
           // Note: In a full implementation, you'd extract title/author from metadata
@@ -434,7 +435,8 @@ export class EbookSearch {
         const docId = this.generateDocumentId(entry.fileMetadata.path);
         const doc: SearchDocument = {
           id: docId,
-          content: textResult.text, // Full content for academic/research
+          excerpt: this.generateExcerpt(textResult.text, 2000), // Store excerpt for display/index size
+          content: textResult.text.length > 50000 ? textResult.text.substring(0, 50000) + '...' : textResult.text, // Truncate content for storage but keep full for indexing
           filePath: entry.fileMetadata.path,
           type: entry.type === 'pdf' ? 'pdf' : 'epub',
           title: this.extractTitleFromEntry(entry),
@@ -539,7 +541,8 @@ export class EbookSearch {
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
             id: docId,
-            content: textResult.text, // Full content for academic/research
+            excerpt: this.generateExcerpt(textResult.text, 2000), // Store excerpt for display
+            content: textResult.text.length > 50000 ? textResult.text.substring(0, 50000) + '...' : textResult.text, // Truncate for storage but index full content
             filePath: entry.fileMetadata.path,
             type: entry.type === 'pdf' ? 'pdf' : 'epub',
             title: this.extractTitleFromEntry(entry),
@@ -555,9 +558,7 @@ export class EbookSearch {
         }
       }
       this.index.addDocumentsBatch(addedDocs);
-    }
-
-    // Process modified files
+    } // Process modified files
     if (changes.modified.length > 0) {
       const modifiedDocs: SearchDocument[] = [];
       for (const entry of changes.modified) {
@@ -577,7 +578,8 @@ export class EbookSearch {
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
             id: docId,
-            content: textResult.text, // Full content for academic/research
+            excerpt: this.generateExcerpt(textResult.text, 2000), // Store excerpt for display
+            content: textResult.text.length > 50000 ? textResult.text.substring(0, 50000) + '...' : textResult.text, // Truncate for storage but index full content
             filePath: entry.fileMetadata.path,
             type: entry.type === 'pdf' ? 'pdf' : 'epub',
             title: this.extractTitleFromEntry(entry),

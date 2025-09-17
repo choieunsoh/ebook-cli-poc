@@ -81,8 +81,8 @@ export class SearchIndex {
   addDocument(doc: SearchDocument): void {
     this.documents.set(doc.id, doc);
 
-    // Tokenize and index excerpt content (prefer excerpt, fallback to content for backward compatibility)
-    const textToIndex = doc.excerpt || doc.content || '';
+    // Tokenize and index content for full-text search (prefer content for academic/research, fallback to excerpt)
+    const textToIndex = doc.content || doc.excerpt || '';
     const tokens = tokenizeForIndexing(textToIndex);
     const uniqueTokens = new Set(tokens);
 
