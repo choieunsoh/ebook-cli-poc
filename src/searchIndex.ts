@@ -10,8 +10,7 @@ export interface SearchDocument {
   id: string;
   title?: string;
   author?: string;
-  excerpt?: string; // New field for content excerpts (smaller index size)
-  content?: string; // Legacy field for backward compatibility
+  excerpt?: string; // Text for display and search result excerpts (truncated)
   filePath: string;
   type: 'pdf' | 'epub';
 }
@@ -51,18 +50,19 @@ export class SearchIndex {
   /**
    * Adds multiple documents to the search index in batch
    */
-  addDocumentsBatch(docs: SearchDocument[]): void {
-    for (const doc of docs) {
-      this.addDocument(doc);
+  addDocumentsBatch(docs: SearchDocument[], fullTextsForIndexing?: string[]): void {
+    for (let i = 0; i < docs.length; i++) {
+      const fullText = fullTextsForIndexing ? fullTextsForIndexing[i] : undefined;
+      this.addDocument(docs[i], fullText);
     }
   }
 
   /**
    * Updates multiple documents in the index
    */
-  updateDocumentsBatch(updates: { id: string; doc: SearchDocument }[]): void {
+  updateDocumentsBatch(updates: { id: string; doc: SearchDocument; fullTextForIndexing?: string }[]): void {
     for (const update of updates) {
-      this.updateDocument(update.doc);
+      this.updateDocument(update.doc, update.fullTextForIndexing);
     }
   }
 
@@ -78,11 +78,11 @@ export class SearchIndex {
   /**
    * Adds a document to the search index
    */
-  addDocument(doc: SearchDocument): void {
+  addDocument(doc: SearchDocument, fullTextForIndexing?: string): void {
     this.documents.set(doc.id, doc);
 
-    // Tokenize and index content for full-text search (prefer content for academic/research, fallback to excerpt)
-    const textToIndex = doc.content || doc.excerpt || '';
+    // Tokenize and index the provided full text, or fallback to excerpt
+    const textToIndex = fullTextForIndexing || doc.excerpt || '';
     const tokens = tokenizeForIndexing(textToIndex);
     const uniqueTokens = new Set(tokens);
 
@@ -118,9 +118,9 @@ export class SearchIndex {
   /**
    * Updates an existing document in the index
    */
-  updateDocument(doc: SearchDocument): void {
+  updateDocument(doc: SearchDocument, fullTextForIndexing?: string): void {
     this.removeDocument(doc.id);
-    this.addDocument(doc);
+    this.addDocument(doc, fullTextForIndexing);
   }
 
   /**
@@ -166,8 +166,8 @@ export class SearchIndex {
       const doc = this.documents.get(docId);
       if (!doc) continue;
 
-      // Create excerpt from stored excerpt/content around the first match
-      const textForExcerpt = doc.excerpt || doc.content || '';
+      // Create excerpt from stored excerpt around the first match
+      const textForExcerpt = doc.excerpt || '';
       const excerpt = this.createExcerpt(textForExcerpt, query);
 
       results.push({
