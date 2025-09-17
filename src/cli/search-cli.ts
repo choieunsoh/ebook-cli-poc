@@ -68,7 +68,7 @@ program
   .option('-f, --force', 'force full rebuild instead of incremental update')
   .option('-v, --verbose', 'enable verbose output')
   .option('--max-file-size <mb>', 'maximum file size in MB to process', '100')
-  .option('--max-memory <mb>', 'maximum memory usage in MB before skipping files', '2048')
+  .option('--max-memory <value>', 'maximum memory usage (e.g., 2048, 8GB, 8192MB) before skipping files', '2048')
   .option('--no-skip-large', 'do not skip large files (may cause memory issues)')
   .option('--no-partial', 'do not extract partial content from large files')
   .option('--max-pages <number>', 'maximum pages to extract from PDFs (0 = unlimited)', '0')
@@ -104,7 +104,7 @@ program
         console.log(`Data file: ${dataFile || 'auto-detect from config.json'}`);
         console.log(`Force full rebuild: ${force ? 'yes' : 'no'}`);
         console.log(`Max file size: ${maxFileSize}MB`);
-        console.log(`Max memory usage: ${maxMemory}MB`);
+        console.log(`Max memory usage: ${maxMemory} (${parseMemoryValue(maxMemory)}MB)`);
         console.log(`Skip large files: ${!noSkipLarge}`);
         console.log(`Extract partial content: ${!noPartial}`);
         console.log(`Max pages: ${maxPages}`);
@@ -124,7 +124,7 @@ program
         verbose,
         forceFullRebuild: force,
         maxFileSizeMB: parseInt(maxFileSize, 10),
-        maxMemoryUsageMB: parseInt(maxMemory, 10),
+        maxMemoryUsageMB: parseMemoryValue(maxMemory),
         skipLargeFiles: !noSkipLarge,
         extractPartialContent: !noPartial,
         maxPages: parseInt(maxPages, 10),
@@ -263,6 +263,32 @@ function findEbookFiles(dir: string, patterns: string[]): string[] {
 
   scan(dir);
   return files;
+}
+
+/**
+ * Parses memory values with units (e.g., "8GB", "2048", "8192MB")
+ */
+function parseMemoryValue(value: string): number {
+  const trimmed = value.trim().toUpperCase();
+
+  // Check for unit suffixes
+  const gbMatch = trimmed.match(/^(\d+(?:\.\d+)?)GB?$/);
+  if (gbMatch) {
+    return Math.round(parseFloat(gbMatch[1]) * 1024); // Convert GB to MB
+  }
+
+  const mbMatch = trimmed.match(/^(\d+(?:\.\d+)?)MB?$/);
+  if (mbMatch) {
+    return Math.round(parseFloat(mbMatch[1])); // Already in MB
+  }
+
+  // Assume plain number is in MB
+  const numericValue = parseFloat(trimmed);
+  if (!isNaN(numericValue)) {
+    return Math.round(numericValue);
+  }
+
+  throw new Error(`Invalid memory value: ${value}. Use format like 2048, 8GB, or 8192MB`);
 }
 
 /**
