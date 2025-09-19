@@ -3,6 +3,7 @@
  */
 
 import * as natural from 'natural';
+import { isBERTAvailable, tokenizeForBERTSearch } from './bertTokenizer';
 
 export interface TokenizationResult {
   tokens: string[];
@@ -55,8 +56,11 @@ export function tokenizeText(text: string): TokenizationResult {
   const tokenizer = new natural.WordTokenizer();
   const tokens = tokenizer.tokenize(text) || [];
 
-  // Filter out very short tokens and non-alphabetic tokens
-  const filteredTokens = tokens.filter((token: string) => token.length > 2 && /^[a-zA-Z]+$/.test(token));
+  // Filter out very short tokens and non-alphabetic tokens (but allow some technical chars)
+  const filteredTokens = tokens.filter((token: string) => {
+    // Keep tokens that are 3+ characters and contain at least some letters
+    return token.length >= 3 && /[a-zA-Z]/.test(token);
+  });
 
   // Apply stemming using Porter Stemmer
   const stemmedTokens = filteredTokens.map((token: string) => natural.PorterStemmer.stem(token.toLowerCase()));
@@ -69,9 +73,40 @@ export function tokenizeText(text: string): TokenizationResult {
 }
 
 /**
- * Advanced tokenization with stop word removal and normalization
+ * Tokenizes text using either basic or BERT tokenization based on configuration
  */
-export function tokenizeTextAdvanced(text: string): TokenizationResult {
+export async function tokenizeTextAdvanced(
+  text: string,
+  useBERT: boolean = false,
+  bertModel?: string,
+): Promise<TokenizationResult> {
+  if (useBERT) {
+    try {
+      // Check if BERT is available
+      const bertAvailable = await isBERTAvailable(bertModel);
+      if (bertAvailable) {
+        const bertTokens = await tokenizeForBERTSearch(text, bertModel);
+        return {
+          tokens: bertTokens,
+          filteredTokens: bertTokens,
+          stemmedTokens: bertTokens, // BERT tokens are already subword tokens
+        };
+      } else {
+        console.warn('⚠️ BERT tokenizer not available, falling back to basic tokenization');
+      }
+    } catch (error) {
+      console.warn('⚠️ BERT tokenization failed, falling back to basic tokenization:', error);
+    }
+  }
+
+  // Fallback to basic tokenization
+  return tokenizeTextBasic(text);
+}
+
+/**
+ * Basic tokenization with stop word removal and normalization
+ */
+export function tokenizeTextBasic(text: string): TokenizationResult {
   // Basic tokenization
   const basic = tokenizeText(text);
 
@@ -95,27 +130,35 @@ export function tokenizeTextAdvanced(text: string): TokenizationResult {
 /**
  * Tokenizes text for search indexing (optimized for search with stop word filtering)
  */
-export function tokenizeForIndexing(text: string): string[] {
-  const result = tokenizeTextAdvanced(text);
+export async function tokenizeForIndexing(
+  text: string,
+  useBERT: boolean = false,
+  bertModel?: string,
+): Promise<string[]> {
+  const result = await tokenizeTextAdvanced(text, useBERT, bertModel);
   return result.stemmedTokens || [];
 }
 
 /**
  * Tokenizes a search query (same processing as indexing)
  */
-export function tokenizeQuery(query: string): string[] {
-  return tokenizeForIndexing(query);
+export async function tokenizeQuery(query: string, useBERT: boolean = false, bertModel?: string): Promise<string[]> {
+  return tokenizeForIndexing(query, useBERT, bertModel);
 }
 
 /**
  * Tokenizes metadata (titles, authors) for search indexing with preprocessing
  * for programming naming conventions (dots, underscores, camelCase, etc.)
  */
-export function tokenizeMetadataForIndexing(text: string): string[] {
+export async function tokenizeMetadataForIndexing(
+  text: string,
+  useBERT: boolean = false,
+  bertModel?: string,
+): Promise<string[]> {
   // First preprocess the metadata to split on naming conventions
   const preprocessed = preprocessMetadataForTokenization(text);
 
   // Then tokenize the preprocessed text
-  const result = tokenizeTextAdvanced(preprocessed);
+  const result = await tokenizeTextAdvanced(preprocessed, useBERT, bertModel);
   return result.stemmedTokens || [];
 }

@@ -13,6 +13,8 @@ export interface SearchDocument {
   excerpt?: string; // Text for display and search result excerpts (truncated)
   filePath: string;
   type: 'pdf' | 'epub';
+  wordCount?: number; // Number of words extracted from the document
+  tokenCount?: number; // Number of tokens after tokenization
 }
 
 export interface SearchResult {
@@ -23,6 +25,8 @@ export interface SearchResult {
   type: 'pdf' | 'epub';
   score: number;
   excerpt?: string;
+  wordCount?: number; // Number of words extracted from the document
+  tokenCount?: number; // Number of tokens after tokenization
 }
 
 export interface IndexMetadata {
@@ -43,27 +47,34 @@ export class SearchIndex {
   private invertedIndex: Map<string, Set<string>> = new Map(); // term -> document IDs
   private metadata: IndexMetadata | null = null;
   private compress: boolean = true;
+  private tokenizationConfig: { mode: string; bertModel?: string; enabled: boolean };
 
-  constructor(compress: boolean = true) {
+  constructor(
+    compress: boolean = true,
+    tokenizationConfig: { mode: string; bertModel?: string; enabled: boolean } = { mode: 'basic', enabled: true },
+  ) {
     this.compress = compress;
+    this.tokenizationConfig = tokenizationConfig;
   }
 
   /**
    * Adds multiple documents to the search index in batch
    */
-  addDocumentsBatch(docs: SearchDocument[], fullTextsForIndexing?: string[]): void {
+  async addDocumentsBatch(docs: SearchDocument[], fullTextsForIndexing?: string[]): Promise<void> {
     for (let i = 0; i < docs.length; i++) {
       const fullText = fullTextsForIndexing ? fullTextsForIndexing[i] : undefined;
-      this.addDocument(docs[i], fullText);
+      await this.addDocument(docs[i], fullText);
     }
   }
 
   /**
    * Updates multiple documents in the index
    */
-  updateDocumentsBatch(updates: { id: string; doc: SearchDocument; fullTextForIndexing?: string }[]): void {
+  async updateDocumentsBatch(
+    updates: { id: string; doc: SearchDocument; fullTextForIndexing?: string }[],
+  ): Promise<void> {
     for (const update of updates) {
-      this.updateDocument(update.doc, update.fullTextForIndexing);
+      await this.updateDocument(update.doc, update.fullTextForIndexing);
     }
   }
 
@@ -79,12 +90,16 @@ export class SearchIndex {
   /**
    * Adds a document to the search index
    */
-  addDocument(doc: SearchDocument, fullTextForIndexing?: string): void {
+  async addDocument(doc: SearchDocument, fullTextForIndexing?: string): Promise<void> {
     this.documents.set(doc.id, doc);
 
     // Tokenize and index the provided full text, or fallback to excerpt
     const textToIndex = fullTextForIndexing || doc.excerpt || '';
-    const tokens = tokenizeForIndexing(textToIndex);
+    const tokens = await tokenizeForIndexing(
+      textToIndex,
+      this.tokenizationConfig.mode === 'bert' && this.tokenizationConfig.enabled,
+      this.tokenizationConfig.bertModel,
+    );
     const uniqueTokens = new Set(tokens);
 
     for (const token of uniqueTokens) {
@@ -96,7 +111,11 @@ export class SearchIndex {
 
     // Also index title and author if present
     if (doc.title) {
-      const titleTokens = tokenizeMetadataForIndexing(doc.title);
+      const titleTokens = await tokenizeMetadataForIndexing(
+        doc.title,
+        this.tokenizationConfig.mode === 'bert' && this.tokenizationConfig.enabled,
+        this.tokenizationConfig.bertModel,
+      );
       for (const token of titleTokens) {
         if (!this.invertedIndex.has(token)) {
           this.invertedIndex.set(token, new Set());
@@ -106,7 +125,11 @@ export class SearchIndex {
     }
 
     if (doc.author) {
-      const authorTokens = tokenizeMetadataForIndexing(doc.author);
+      const authorTokens = await tokenizeMetadataForIndexing(
+        doc.author,
+        this.tokenizationConfig.mode === 'bert' && this.tokenizationConfig.enabled,
+        this.tokenizationConfig.bertModel,
+      );
       for (const token of authorTokens) {
         if (!this.invertedIndex.has(token)) {
           this.invertedIndex.set(token, new Set());
@@ -119,9 +142,9 @@ export class SearchIndex {
   /**
    * Updates an existing document in the index
    */
-  updateDocument(doc: SearchDocument, fullTextForIndexing?: string): void {
+  async updateDocument(doc: SearchDocument, fullTextForIndexing?: string): Promise<void> {
     this.removeDocument(doc.id);
-    this.addDocument(doc, fullTextForIndexing);
+    await this.addDocument(doc, fullTextForIndexing);
   }
 
   /**
@@ -145,8 +168,12 @@ export class SearchIndex {
   /**
    * Searches the index for matching documents
    */
-  search(query: string, limit: number = 20): SearchResult[] {
-    const queryTokens = tokenizeForIndexing(query);
+  async search(query: string, limit: number = 20): Promise<SearchResult[]> {
+    const queryTokens = await tokenizeForIndexing(
+      query,
+      this.tokenizationConfig.mode === 'bert' && this.tokenizationConfig.enabled,
+      this.tokenizationConfig.bertModel,
+    );
     if (queryTokens.length === 0) return [];
 
     // Find documents that contain all query terms (AND search)
@@ -179,6 +206,8 @@ export class SearchIndex {
         type: doc.type,
         score,
         excerpt,
+        wordCount: doc.wordCount,
+        tokenCount: doc.tokenCount,
       });
     }
 
@@ -331,6 +360,31 @@ export class SearchIndex {
       dataFileHash,
       indexedFiles,
     };
+  }
+
+  /**
+   * Merges another index into this one by combining documents and inverted indexes
+   */
+  mergeIndex(otherIndex: SearchIndex): void {
+    // Add all documents from the other index
+    for (const doc of otherIndex.getAllDocuments()) {
+      this.documents.set(doc.id, doc);
+    }
+
+    // Merge inverted indexes
+    for (const [term, docIds] of otherIndex.invertedIndex) {
+      if (!this.invertedIndex.has(term)) {
+        this.invertedIndex.set(term, new Set());
+      }
+      for (const docId of docIds) {
+        this.invertedIndex.get(term)!.add(docId);
+      }
+    }
+
+    // Merge metadata if needed
+    if (otherIndex.metadata && !this.metadata) {
+      this.metadata = otherIndex.metadata;
+    }
   }
 
   /**

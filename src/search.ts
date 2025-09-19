@@ -57,7 +57,7 @@ export class EbookSearch {
 
   constructor(indexFilePath: string = 'search-index.json') {
     this.indexFilePath = indexFilePath;
-    this.index = new SearchIndex(this.getIndexCompressionSetting());
+    this.index = new SearchIndex(this.getIndexCompressionSetting(), this.getTokenizationConfig());
   }
 
   /**
@@ -112,7 +112,12 @@ export class EbookSearch {
         successCount++;
 
         // Tokenize the extracted text
-        const tokens = tokenizeForIndexing(textResult.text);
+        const tokenizationConfig = this.getTokenizationConfig();
+        const tokens = await tokenizeForIndexing(
+          textResult.text,
+          tokenizationConfig.mode === 'bert' && tokenizationConfig.enabled,
+          tokenizationConfig.bertModel,
+        );
 
         // Create search document
         const docId = this.generateDocumentId(filePath);
@@ -124,6 +129,8 @@ export class EbookSearch {
           // Note: In a full implementation, you'd extract title/author from metadata
           // For now, we'll use filename as title
           title: path.basename(filePath, path.extname(filePath)),
+          wordCount: textResult.wordCount,
+          tokenCount: tokens.length,
         };
 
         // Check if document already exists when appending
@@ -285,12 +292,12 @@ export class EbookSearch {
     }
 
     // Perform search
-    let results = this.index.search(query, limit);
+    let results = await this.index.search(query, limit);
 
     // Apply fuzzy matching if requested and no exact results
     if (fuzzy && results.length === 0) {
       // Simple fuzzy: try partial matches
-      const fuzzyResults = this.fuzzySearch(query, limit);
+      const fuzzyResults = await this.fuzzySearch(query, limit);
       results = fuzzyResults;
     }
 
@@ -312,13 +319,18 @@ export class EbookSearch {
   /**
    * Performs fuzzy search for partial matches
    */
-  private fuzzySearch(query: string, limit: number): SearchResult[] {
-    const queryTokens = tokenizeQuery(query);
+  private async fuzzySearch(query: string, limit: number): Promise<SearchResult[]> {
+    const tokenizationConfig = this.getTokenizationConfig();
+    const queryTokens = await tokenizeQuery(
+      query,
+      tokenizationConfig.mode === 'bert' && tokenizationConfig.enabled,
+      tokenizationConfig.bertModel,
+    );
     const allResults = new Map<string, SearchResult>();
 
     // Try each token individually
     for (const token of queryTokens) {
-      const results = this.index.search(token, limit * 2); // Get more results for fuzzy
+      const results = await this.index.search(token, limit * 2); // Get more results for fuzzy
       for (const result of results) {
         if (!allResults.has(result.id)) {
           // Reduce score for partial matches
@@ -442,6 +454,34 @@ export class EbookSearch {
   }
 
   /**
+   * Gets the tokenization configuration from config.json
+   */
+  private getTokenizationConfig(): { mode: string; bertModel?: string; enabled: boolean } {
+    try {
+      const configPath = path.join(process.cwd(), 'config.json');
+      if (!fs.existsSync(configPath)) {
+        return { mode: 'basic', enabled: true }; // Default to basic tokenization
+      }
+
+      const configData = fs.readFileSync(configPath, 'utf-8');
+      const config = JSON.parse(configData);
+
+      if (config.tokenization) {
+        const tokenization = config.tokenization;
+        return {
+          mode: tokenization.mode || 'basic',
+          bertModel: tokenization.bert?.model,
+          enabled: tokenization.enabled !== false,
+        };
+      }
+    } catch (error) {
+      console.warn('Warning: Could not read tokenization config:', error);
+    }
+
+    return { mode: 'basic', enabled: true }; // Default fallback
+  }
+
+  /**
    * Performs a full rebuild of the index
    */
   private async performFullRebuild(
@@ -486,7 +526,12 @@ export class EbookSearch {
         }
 
         // Tokenize the extracted text
-        const tokens = tokenizeForIndexing(textResult.text);
+        const tokenizationConfig = this.getTokenizationConfig();
+        const tokens = await tokenizeForIndexing(
+          textResult.text,
+          tokenizationConfig.mode === 'bert' && tokenizationConfig.enabled,
+          tokenizationConfig.bertModel,
+        );
 
         // Create search document
         const docId = this.generateDocumentId(entry.fileMetadata.path);
@@ -497,6 +542,8 @@ export class EbookSearch {
           type: entry.type === 'pdf' ? 'pdf' : 'epub',
           title: this.extractTitleFromEntry(entry),
           author: this.extractAuthorFromEntry(entry),
+          wordCount: textResult.wordCount,
+          tokenCount: tokens.length,
         };
 
         documents.push(doc);
@@ -605,7 +652,12 @@ export class EbookSearch {
           }
 
           // Tokenize the extracted text
-          const tokens = tokenizeForIndexing(textResult.text);
+          const tokenizationConfig = this.getTokenizationConfig();
+          const tokens = await tokenizeForIndexing(
+            textResult.text,
+            tokenizationConfig.mode === 'bert' && tokenizationConfig.enabled,
+            tokenizationConfig.bertModel,
+          );
 
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
@@ -615,6 +667,8 @@ export class EbookSearch {
             type: entry.type === 'pdf' ? 'pdf' : 'epub',
             title: this.extractTitleFromEntry(entry),
             author: this.extractAuthorFromEntry(entry),
+            wordCount: textResult.wordCount,
+            tokenCount: tokens.length,
           };
 
           addedDocs.push(doc);
@@ -654,7 +708,12 @@ export class EbookSearch {
           }
 
           // Tokenize the extracted text
-          const tokens = tokenizeForIndexing(textResult.text);
+          const tokenizationConfig = this.getTokenizationConfig();
+          const tokens = await tokenizeForIndexing(
+            textResult.text,
+            tokenizationConfig.mode === 'bert' && tokenizationConfig.enabled,
+            tokenizationConfig.bertModel,
+          );
 
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
@@ -664,6 +723,8 @@ export class EbookSearch {
             type: entry.type === 'pdf' ? 'pdf' : 'epub',
             title: this.extractTitleFromEntry(entry),
             author: this.extractAuthorFromEntry(entry),
+            wordCount: textResult.wordCount,
+            tokenCount: tokens.length,
           };
 
           modifiedDocs.push(doc);
@@ -772,7 +833,7 @@ export class EbookSearch {
     // Combine all changed entries for batch processing
     const changedEntries = [...changes.added, ...changes.modified];
     const batchGenerator = this.createBatchGenerator(changedEntries, batchSize);
-    const batchFiles: string[] = [];
+    const batchIndexes: SearchIndex[] = []; // Store batch indexes in memory
     let totalProcessed = 0;
     let totalFailed = 0;
     const allFailedFiles: Array<{ path: string; error: string }> = [];
@@ -781,15 +842,12 @@ export class EbookSearch {
 
     for (const batch of batchGenerator) {
       batchIndex++;
-      const batchFileName = `batch-${batchIndex.toString().padStart(3, '0')}.json`;
-      const batchFilePath = path.join(batchDir, batchFileName);
-
       if (verbose) {
-        console.log(`Processing batch ${batchIndex} (${batch.length} files) -> ${batchFileName}`);
+        console.log(`Processing batch ${batchIndex} (${batch.length} files)`);
       }
 
       // Create a temporary index for this batch
-      const batchIndexInstance = new SearchIndex(this.getIndexCompressionSetting());
+      const batchIndexInstance = new SearchIndex(this.getIndexCompressionSetting(), this.getTokenizationConfig());
       const batchDocuments: SearchDocument[] = [];
       const batchFullTexts: string[] = [];
 
@@ -810,7 +868,12 @@ export class EbookSearch {
           }
 
           // Tokenize the extracted text
-          const tokens = tokenizeForIndexing(textResult.text);
+          const tokenizationConfig = this.getTokenizationConfig();
+          const tokens = await tokenizeForIndexing(
+            textResult.text,
+            tokenizationConfig.mode === 'bert' && tokenizationConfig.enabled,
+            tokenizationConfig.bertModel,
+          );
 
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
@@ -820,6 +883,8 @@ export class EbookSearch {
             type: entry.type === 'pdf' ? 'pdf' : 'epub',
             title: this.extractTitleFromEntry(entry),
             author: this.extractAuthorFromEntry(entry),
+            wordCount: textResult.wordCount,
+            tokenCount: tokens.length,
           };
 
           batchDocuments.push(doc);
@@ -838,34 +903,35 @@ export class EbookSearch {
         }
       }
 
-      // Add documents to batch index and save
-      batchIndexInstance.addDocumentsBatch(batchDocuments, batchFullTexts);
-      await batchIndexInstance.exportToFile(batchFilePath);
-      batchFiles.push(batchFilePath);
+      // Add documents to batch index and store in memory
+      await batchIndexInstance.addDocumentsBatch(batchDocuments, batchFullTexts);
+      batchIndexes.push(batchIndexInstance);
 
       if (verbose) {
-        console.log(`  Batch ${batchIndex} saved: ${batchDocuments.length} documents`);
+        console.log(`  Batch ${batchIndex} completed: ${batchDocuments.length} documents`);
       }
     }
 
     // Merge all batch indexes into the main index
     if (verbose) {
-      console.log(`Merging ${batchFiles.length} batch indexes...`);
+      console.log(`Merging ${batchIndexes.length} batch indexes...`);
     }
 
-    for (const batchFile of batchFiles) {
+    for (const batchIndex of batchIndexes) {
       if (verbose) {
-        console.log(`Merging batch: ${path.basename(batchFile)}`);
+        console.log(`Merging batch`);
       }
 
-      try {
-        // Create a temporary index instance to load the compressed batch file
-        const tempIndex = new SearchIndex(this.getIndexCompressionSetting());
-        await tempIndex.importFromFile(batchFile);
-        const documents = tempIndex.getAllDocuments();
-        this.index.addDocumentsBatch(documents);
-      } catch (error) {
-        console.error(`Failed to merge batch ${batchFile}:`, error);
+      const docCount = batchIndex.getDocumentCount();
+      if (verbose) {
+        console.log(`  Batch has ${docCount} documents`);
+      }
+
+      // Merge the complete index (documents + inverted index) into the main index
+      this.index.mergeIndex(batchIndex);
+
+      if (verbose) {
+        console.log(`  Merged ${docCount} documents`);
       }
     }
 
@@ -929,7 +995,7 @@ export class EbookSearch {
     }
 
     const batchGenerator = this.createBatchGenerator(limitedEntries, batchSize);
-    const batchFiles: string[] = [];
+    const batchIndexes: SearchIndex[] = []; // Store batch indexes in memory
     let totalProcessed = 0;
     let totalFailed = 0;
     const allFailedFiles: Array<{ path: string; error: string }> = [];
@@ -938,15 +1004,12 @@ export class EbookSearch {
 
     for (const batch of batchGenerator) {
       batchIndex++;
-      const batchFileName = `batch-${batchIndex.toString().padStart(3, '0')}.json`;
-      const batchFilePath = path.join(batchDir, batchFileName);
-
       if (verbose) {
-        console.log(`Processing batch ${batchIndex} (${batch.length} files) -> ${batchFileName}`);
+        console.log(`Processing batch ${batchIndex} (${batch.length} files)`);
       }
 
       // Create a temporary index for this batch
-      const batchIndexInstance = new SearchIndex(this.getIndexCompressionSetting());
+      const batchIndexInstance = new SearchIndex(this.getIndexCompressionSetting(), this.getTokenizationConfig());
       const batchDocuments: SearchDocument[] = [];
       const batchFullTexts: string[] = [];
 
@@ -967,7 +1030,12 @@ export class EbookSearch {
           }
 
           // Tokenize the extracted text
-          const tokens = tokenizeForIndexing(textResult.text);
+          const tokenizationConfig = this.getTokenizationConfig();
+          const tokens = await tokenizeForIndexing(
+            textResult.text,
+            tokenizationConfig.mode === 'bert' && tokenizationConfig.enabled,
+            tokenizationConfig.bertModel,
+          );
 
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
@@ -977,6 +1045,8 @@ export class EbookSearch {
             type: entry.type === 'pdf' ? 'pdf' : 'epub',
             title: this.extractTitleFromEntry(entry),
             author: this.extractAuthorFromEntry(entry),
+            wordCount: textResult.wordCount,
+            tokenCount: tokens.length,
           };
 
           batchDocuments.push(doc);
@@ -995,22 +1065,21 @@ export class EbookSearch {
         }
       }
 
-      // Add documents to batch index and save
-      batchIndexInstance.addDocumentsBatch(batchDocuments, batchFullTexts);
-      await batchIndexInstance.exportToFile(batchFilePath);
-      batchFiles.push(batchFilePath);
+      // Add documents to batch index and store in memory
+      await batchIndexInstance.addDocumentsBatch(batchDocuments, batchFullTexts);
+      batchIndexes.push(batchIndexInstance);
 
       if (verbose) {
-        console.log(`  Batch ${batchIndex} saved: ${batchDocuments.length} documents`);
+        console.log(`  Batch ${batchIndex} completed: ${batchDocuments.length} documents`);
       }
     }
 
-    // Merge all batch indexes
+    // Merge all batch indexes in memory
     if (verbose) {
-      console.log(`Merging ${batchFiles.length} batch indexes...`);
+      console.log(`Merging ${batchIndexes.length} batch indexes...`);
     }
 
-    await this.mergeBatchIndexes(batchFiles, verbose);
+    await this.mergeBatchIndexesInMemory(batchIndexes, verbose);
 
     // Update metadata
     this.index.updateMetadata(dataFileContent.hash);
@@ -1057,12 +1126,51 @@ export class EbookSearch {
 
       try {
         // Create a temporary index instance to load the compressed batch file
-        const tempIndex = new SearchIndex(this.getIndexCompressionSetting());
+        const tempIndex = new SearchIndex(this.getIndexCompressionSetting(), this.getTokenizationConfig());
         await tempIndex.importFromFile(batchFile);
-        const documents = tempIndex.getAllDocuments();
-        this.index.addDocumentsBatch(documents);
+
+        const docCount = tempIndex.getDocumentCount();
+        if (verbose) {
+          console.log(`  Loaded ${docCount} documents from ${path.basename(batchFile)}`);
+          console.log(`  Inverted index has ${tempIndex['invertedIndex'].size} terms`);
+        }
+
+        // Merge the complete index (documents + inverted index) into the main index
+        this.index.mergeIndex(tempIndex);
+
+        if (verbose) {
+          console.log(`  Merged ${docCount} documents`);
+        }
       } catch (error) {
         console.error(`Failed to merge batch ${batchFile}:`, error);
+      }
+    }
+  }
+
+  /**
+   * Merges multiple batch indexes in memory into the main index
+   */
+  private async mergeBatchIndexesInMemory(batchIndexes: SearchIndex[], verbose: boolean): Promise<void> {
+    // Clear the main index
+    this.index.clear();
+
+    for (let i = 0; i < batchIndexes.length; i++) {
+      const batchIndex = batchIndexes[i];
+      if (verbose) {
+        console.log(`Merging batch ${i + 1}`);
+      }
+
+      const docCount = batchIndex.getDocumentCount();
+      if (verbose) {
+        console.log(`  Batch has ${docCount} documents`);
+        console.log(`  Inverted index has ${batchIndex['invertedIndex'].size} terms`);
+      }
+
+      // Merge the complete index (documents + inverted index) into the main index
+      this.index.mergeIndex(batchIndex);
+
+      if (verbose) {
+        console.log(`  Merged ${docCount} documents`);
       }
     }
   }

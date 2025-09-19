@@ -264,6 +264,12 @@ program
         }
         console.log(`   Type: ${result.type.toUpperCase()}`);
         console.log(`   Score: ${result.score}`);
+        if (result.wordCount !== undefined) {
+          console.log(`   Word Count: ${result.wordCount}`);
+        }
+        if (result.tokenCount !== undefined) {
+          console.log(`   Token Count: ${result.tokenCount}`);
+        }
         if (result.excerpt) {
           console.log(`   Excerpt: ${result.excerpt}`);
         }
