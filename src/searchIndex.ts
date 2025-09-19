@@ -395,4 +395,30 @@ export class SearchIndex {
     this.invertedIndex.clear();
     this.metadata = null;
   }
+
+  /**
+   * Gets the total number of unique terms in the inverted index
+   */
+  getInvertedIndexTermCount(): number {
+    return this.invertedIndex.size;
+  }
+
+  /**
+   * Gets the top N most frequent terms in the inverted index
+   */
+  getTopFrequentTerms(limit: number = 3): Array<{ term: string; frequency: number }> {
+    const termFrequencies: Array<{ term: string; frequency: number }> = [];
+
+    for (const [term, docIds] of this.invertedIndex) {
+      termFrequencies.push({
+        term,
+        frequency: docIds.size,
+      });
+    }
+
+    // Sort by frequency descending
+    termFrequencies.sort((a, b) => b.frequency - a.frequency);
+
+    return termFrequencies.slice(0, limit);
+  }
 }

@@ -185,6 +185,17 @@ program
       console.log(`Total documents in index: ${stats.documentCount}`);
       console.log(`Index file size: ${formatBytes(stats.indexSize)}`);
 
+      // Display inverted index statistics
+      if (result.invertedIndexTermCount !== undefined) {
+        console.log(`Inverted index terms: ${result.invertedIndexTermCount}`);
+      }
+      if (result.topFrequentTerms && result.topFrequentTerms.length > 0) {
+        console.log(`Top frequent terms:`);
+        result.topFrequentTerms.forEach((term, index) => {
+          console.log(`  ${index + 1}. "${term.term}" (${term.frequency} documents)`);
+        });
+      }
+
       // Display failed files information
       if (result.failed > 0) {
         console.log(`\n❌ Failed files: ${result.failed}`);

@@ -49,11 +49,14 @@ export interface IncrementalBuildResult {
   isFullRebuild: boolean;
   failed: number;
   failedFiles: Array<{ path: string; error: string }>;
+  invertedIndexTermCount?: number;
+  topFrequentTerms?: Array<{ term: string; frequency: number }>;
 }
 
 export class EbookSearch {
   private index: SearchIndex;
   private indexFilePath: string;
+  private TOP_FREQUENT_TERMS = 10;
 
   constructor(indexFilePath: string = 'search-index.json') {
     this.indexFilePath = indexFilePath;
@@ -581,6 +584,8 @@ export class EbookSearch {
       isFullRebuild: true,
       failed: failedCount,
       failedFiles,
+      invertedIndexTermCount: this.index.getInvertedIndexTermCount(),
+      topFrequentTerms: this.index.getTopFrequentTerms(this.TOP_FREQUENT_TERMS),
     };
   }
 
@@ -775,6 +780,8 @@ export class EbookSearch {
       isFullRebuild: false,
       failed: failedCount,
       failedFiles,
+      invertedIndexTermCount: this.index.getInvertedIndexTermCount(),
+      topFrequentTerms: this.index.getTopFrequentTerms(this.TOP_FREQUENT_TERMS),
     };
   }
 
@@ -966,6 +973,8 @@ export class EbookSearch {
       isFullRebuild: false,
       failed: totalFailed,
       failedFiles: allFailedFiles,
+      invertedIndexTermCount: this.index.getInvertedIndexTermCount(),
+      topFrequentTerms: this.index.getTopFrequentTerms(this.TOP_FREQUENT_TERMS),
     };
   }
   private async performBatchRebuild(
@@ -1100,6 +1109,8 @@ export class EbookSearch {
       isFullRebuild: true,
       failed: totalFailed,
       failedFiles: allFailedFiles,
+      invertedIndexTermCount: this.index.getInvertedIndexTermCount(),
+      topFrequentTerms: this.index.getTopFrequentTerms(this.TOP_FREQUENT_TERMS),
     };
   }
 
