@@ -117,9 +117,17 @@ export async function tokenizeWithBERT(
           // Skip problematic tokens
         }
       }
+
+      // Ensure all tokens are lowercased for uncased models
+      if (modelName.includes('uncased')) {
+        tokens = tokens.map((token) => token.toLowerCase());
+      }
     } else {
-      // Fallback: split text into words
-      tokens = text.split(/\s+/).filter((t) => t.length > 0);
+      // Fallback: split text into words and lowercase
+      tokens = text
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t) => t.length > 0);
     }
 
     return {
@@ -148,8 +156,11 @@ export async function tokenizeForBERTSearch(text: string, modelName: string = 'b
       (token) => !token.startsWith('[') && !token.endsWith(']') && token.length > 1,
     );
 
+    // Ensure all tokens are lowercased for consistency (BERT uncased should already do this, but be safe)
+    const normalizedTokens = searchTokens.map((token) => token.toLowerCase());
+
     // Remove duplicates and return
-    return [...new Set(searchTokens)];
+    return [...new Set(normalizedTokens)];
   } catch (error) {
     console.warn(`⚠️ BERT tokenization failed, falling back to basic tokenization:`, error);
     // Fallback to basic tokenization if BERT fails
