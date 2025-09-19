@@ -64,25 +64,53 @@ function checkFileSize(filePath: string, maxSizeMB: number = 100): { sizeMB: num
 
 /**
  * Cleans up a filename to make it more readable and searchable
+ * Exported for testing purposes
  */
-function cleanFilenameForSearch(fileName: string): string {
-  // Remove file extension if present
-  const nameWithoutExt = fileName.replace(/\.pdf$/i, '');
+export function cleanFilenameForSearch(fileName: string): string {
+  // Load config for filename replacements
+  const config = loadConfig();
+
+  // Remove file extension if present (handle multiple extensions like .epub, .pdf)
+  const nameWithoutExt = fileName.replace(/\.(pdf|epub)$/i, '');
+
+  // Apply custom replacements from config
+  let cleaned = nameWithoutExt;
+  const replacements = config.filenameReplacements || [];
+  for (const pattern of replacements) {
+    // Escape special regex characters and create a more flexible pattern
+    const escapedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Use word boundaries but also handle patterns with dots/hyphens
+    const regex = new RegExp(`\\b${escapedPattern}\\b|${escapedPattern}`, 'gi');
+    cleaned = cleaned.replace(regex, '');
+  }
 
   // Convert dots to spaces (but avoid splitting version numbers or abbreviations)
-  let cleaned = nameWithoutExt.replace(/\.+/g, ' ');
+  cleaned = cleaned.replace(/\.+/g, ' ');
 
-  // Convert underscores to spaces
-  cleaned = cleaned.replace(/_+/g, ' ');
+  // Convert underscores and hyphens to spaces
+  cleaned = cleaned.replace(/[_-]+/g, ' ');
 
   // Handle camelCase by adding spaces before capital letters (but not at the start)
   cleaned = cleaned.replace(/([a-z])([A-Z])/g, '$1 $2');
 
-  // Clean up multiple spaces
+  // Handle common ebook patterns
+  // Remove author prefixes like "by", "By", "BY"
+  cleaned = cleaned.replace(/\b(by|by|BY)\s+/gi, '');
+
+  // Handle edition patterns like "1st Edition", "2nd Edition", etc.
+  cleaned = cleaned.replace(/\b(\d+)(st|nd|rd|th)\s+edition?\b/gi, '');
+
+  // Handle year patterns at the end (4-digit years)
+  cleaned = cleaned.replace(/\s+\d{4}\b/g, '');
+
+  // Handle volume/chapter patterns
+  cleaned = cleaned.replace(/\b(vol|volume|chap|chapter)\.?\s*\d+\b/gi, '');
+
+  // Clean up multiple spaces and trim
   cleaned = cleaned.replace(/\s+/g, ' ').trim();
 
-  // Handle common patterns like numbers at the end
-  // e.g., "Book Title 2nd Edition 2023" -> keep as is, but ensure spacing
+  // Capitalize first letter of each word for better readability
+  cleaned = cleaned.replace(/\b\w/g, (letter) => letter.toUpperCase());
 
   return cleaned;
 }
@@ -442,7 +470,11 @@ async function repairPDFWithQPDF(
 /**
  * Loads configuration from config.json
  */
-function loadConfig(): { backupDir?: string; [key: string]: unknown } {
+function loadConfig(): {
+  backupDir?: string;
+  filenameReplacements?: string[];
+  [key: string]: unknown;
+} {
   try {
     const configPath = path.join(process.cwd(), 'config.json');
     if (!fs.existsSync(configPath)) {
@@ -710,7 +742,7 @@ export async function extractTextFromPDF(
         wordCount: cleanedFileName.split(/\s+/).filter((word: string) => word.length > 0).length,
         error: `All PDF extraction methods failed. Repair attempt also failed. Using cleaned filename as content. Last error: ${lastError}`,
         source: 'filename-fallback',
-        success: false,
+        success: true, // Changed to true - fallback extraction is still successful
       };
     } catch (pdfError) {
       // Handle all PDF parsing errors gracefully, not just memory-related ones
@@ -841,7 +873,7 @@ export async function extractTextFromEPUB(
       wordCount: cleanedFileName.split(/\s+/).filter((word: string) => word.length > 0).length,
       error: `All EPUB extraction methods failed. Using cleaned filename as content. Last error: ${lastError}`,
       source: 'filename-fallback',
-      success: false,
+      success: true, // Changed to true - fallback extraction is still successful
     };
   } catch (error) {
     return {

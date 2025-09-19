@@ -13,6 +13,17 @@
   "output": "books.json",
   "dataFile": "data.json",
   "timestampFormat": "YYYY-MM-DD_HH-mm-ss",
+  "filenameReplacements": [
+    "z libray",
+    "z.libray",
+    "z-libray",
+    "zlibrary",
+    "libgen li",
+    "libgen.li",
+    "libgen-li",
+    "libgenli",
+    "libgen"
+  ],
   "tokenization": {
     "enabled": true,
     "minTokenLength": 2,
