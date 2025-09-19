@@ -11,11 +11,13 @@ import * as path from 'path';
 import * as pdfParse from 'pdf-parse';
 import * as pdf2json from 'pdf2json';
 import { PdfReader } from 'pdfreader';
+import { tokenizeForIndexing } from './tokenizer';
 
 export interface TextExtractionResult {
   text: string;
   error?: string;
   wordCount?: number;
+  tokenCount?: number;
   skipped?: boolean;
   reason?: string;
   source?: string; // Indicates where the text was extracted from (e.g., 'pdf-content', 'filename-fallback')
@@ -662,6 +664,8 @@ export async function extractTextFromPDF(
             }
 
             const wordCount = text.split(/\s+/).filter((word: string) => word.length > 0).length;
+            const tokens = await tokenizeForIndexing(text);
+            const tokenCount = tokens.length;
 
             // Check final memory usage
             const finalMemory = getMemoryUsage();
@@ -672,10 +676,13 @@ export async function extractTextFromPDF(
               );
             }
 
-            console.log(`Successfully extracted text using ${extractor.name} (${wordCount} words)`);
+            console.log(
+              `Successfully extracted text using ${extractor.name} (${wordCount} words, ${tokenCount} tokens)`,
+            );
             return {
               text,
               wordCount,
+              tokenCount,
               source: 'pdf-content',
               success: true,
             };
@@ -706,6 +713,8 @@ export async function extractTextFromPDF(
           const retryResult = await extractWithPdfParse(repairedBuffer, maxPages);
           if (retryResult.success && retryResult.text.trim()) {
             const wordCount = retryResult.text.split(/\s+/).filter((word: string) => word.length > 0).length;
+            const tokens = await tokenizeForIndexing(retryResult.text);
+            const tokenCount = tokens.length;
 
             // Check final memory usage
             const finalMemory = getMemoryUsage();
@@ -715,10 +724,11 @@ export async function extractTextFromPDF(
               );
             }
 
-            console.log(`Successfully extracted text from repaired PDF (${wordCount} words)`);
+            console.log(`Successfully extracted text from repaired PDF (${wordCount} words, ${tokenCount} tokens)`);
             return {
               text: retryResult.text,
               wordCount,
+              tokenCount,
               source: 'pdf-content',
               success: true,
             };
@@ -737,9 +747,13 @@ export async function extractTextFromPDF(
       const cleanedFileName = cleanFilenameForSearch(fileName);
       console.log(`Using cleaned filename as fallback content: ${cleanedFileName}`);
 
+      const wordCount = cleanedFileName.split(/\s+/).filter((word: string) => word.length > 0).length;
+      const tokens = await tokenizeForIndexing(cleanedFileName);
+      const tokenCount = tokens.length;
       return {
         text: cleanedFileName,
-        wordCount: cleanedFileName.split(/\s+/).filter((word: string) => word.length > 0).length,
+        wordCount,
+        tokenCount,
         error: `All PDF extraction methods failed. Repair attempt also failed. Using cleaned filename as content. Last error: ${lastError}`,
         source: 'filename-fallback',
         success: true, // Changed to true - fallback extraction is still successful
@@ -812,11 +826,16 @@ export async function extractTextFromEPUB(
 
         if (result.success && result.text.trim()) {
           const wordCount = result.text.split(/\s+/).filter((word: string) => word.length > 0).length;
-          console.log(`Successfully extracted text from EPUB using ${extractor.name} (${wordCount} words)`);
+          const tokens = await tokenizeForIndexing(result.text);
+          const tokenCount = tokens.length;
+          console.log(
+            `Successfully extracted text from EPUB using ${extractor.name} (${wordCount} words, ${tokenCount} tokens)`,
+          );
 
           return {
             text: result.text,
             wordCount,
+            tokenCount,
             source: 'epub-content',
             success: true,
           };
@@ -842,11 +861,14 @@ export async function extractTextFromEPUB(
         const retryResult = await extractWithEpubParser(repairResult.repairedPath, maxMemoryUsageMB);
         if (retryResult.success && retryResult.text.trim()) {
           const wordCount = retryResult.text.split(/\s+/).filter((word: string) => word.length > 0).length;
-          console.log(`Successfully extracted text from repaired EPUB (${wordCount} words)`);
+          const tokens = await tokenizeForIndexing(retryResult.text);
+          const tokenCount = tokens.length;
+          console.log(`Successfully extracted text from repaired EPUB (${wordCount} words, ${tokenCount} tokens)`);
 
           return {
             text: retryResult.text,
             wordCount,
+            tokenCount,
             source: 'epub-content',
             success: true,
           };
@@ -868,9 +890,13 @@ export async function extractTextFromEPUB(
     const cleanedFileName = cleanFilenameForSearch(fileName);
     console.log(`Using cleaned filename as fallback content: ${cleanedFileName}`);
 
+    const wordCount = cleanedFileName.split(/\s+/).filter((word: string) => word.length > 0).length;
+    const tokens = await tokenizeForIndexing(cleanedFileName);
+    const tokenCount = tokens.length;
     return {
       text: cleanedFileName,
-      wordCount: cleanedFileName.split(/\s+/).filter((word: string) => word.length > 0).length,
+      wordCount,
+      tokenCount,
       error: `All EPUB extraction methods failed. Using cleaned filename as content. Last error: ${lastError}`,
       source: 'filename-fallback',
       success: true, // Changed to true - fallback extraction is still successful
