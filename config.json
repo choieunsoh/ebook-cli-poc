@@ -26,6 +26,7 @@
   ],
   "tokenization": {
     "enabled": true,
+    "mode": "bert",
     "minTokenLength": 2,
     "maxTokenLength": 50,
     "removeStopwords": true,
@@ -33,7 +34,13 @@
     "customStopwords": [],
     "fieldsToTokenize": [
       "filename"
-    ]
+    ],
+    "bert": {
+      "enabled": true,
+      "model": "Xenova/bert-base-uncased",
+      "cacheModels": true,
+      "fallbackToBasic": true
+    }
   },
   "index": {
     "compress": false
