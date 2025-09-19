@@ -4,6 +4,7 @@
  */
 
 import { AutoTokenizer, PreTrainedTokenizer } from '@xenova/transformers';
+import { eng, removeStopwords } from 'stopword';
 
 export interface BERTTokenizationResult {
   tokens: string[];
@@ -97,24 +98,50 @@ export async function tokenizeWithBERT(
       return_tensors: null,
     });
 
+    // Validate encoding structure
+    if (!encoding || typeof encoding !== 'object') {
+      throw new Error('Invalid encoding response from BERT tokenizer');
+    }
+
     let tokens: string[] = [];
     let inputIds: number[] = [];
     let attentionMask: number[] = [];
 
     if (encoding.input_ids && Array.isArray(encoding.input_ids)) {
-      inputIds = Array.from(encoding.input_ids).map((id: unknown) => Number(id));
-      attentionMask = Array.from(encoding.attention_mask || []).map((mask: unknown) => Number(mask));
+      // Safely convert input_ids to numbers, filtering out undefined/null values
+      inputIds = Array.from(encoding.input_ids)
+        .filter((id): id is number | bigint => id != null)
+        .map((id) => {
+          try {
+            return typeof id === 'bigint' ? Number(id) : Number(id);
+          } catch {
+            return 0; // Fallback for problematic values
+          }
+        });
+
+      // Safely convert attention_mask to numbers
+      attentionMask = Array.from(encoding.attention_mask || [])
+        .filter((mask): mask is number | bigint => mask != null)
+        .map((mask) => {
+          try {
+            return typeof mask === 'bigint' ? Number(mask) : Number(mask);
+          } catch {
+            return 1; // Default attention mask value
+          }
+        });
 
       // Use tokenizer's decode method for individual tokens
       tokens = [];
       for (const id of encoding.input_ids) {
-        try {
-          const token = tokenizer.decode([id], { skip_special_tokens: false });
-          if (token && token.trim()) {
-            tokens.push(token);
+        if (id != null) {
+          try {
+            const token = tokenizer.decode([id], { skip_special_tokens: false });
+            if (token && token.trim()) {
+              tokens.push(token);
+            }
+          } catch {
+            // Skip problematic tokens
           }
-        } catch {
-          // Skip problematic tokens
         }
       }
 
@@ -156,8 +183,8 @@ export async function tokenizeForBERTSearch(text: string, modelName: string = 'b
       (token) => !token.startsWith('[') && !token.endsWith(']') && token.length > 1,
     );
 
-    // Remove common English stopwords for search efficiency
-    const filteredTokens = searchTokens.filter((token) => !isStopword(token.toLowerCase()));
+    // Remove common English stopwords for search efficiency using stopword library
+    const filteredTokens = removeStopwords(searchTokens, eng);
 
     // Ensure all tokens are lowercased for consistency (BERT uncased should already do this, but be safe)
     const normalizedTokens = filteredTokens.map((token) => token.toLowerCase());
@@ -185,225 +212,6 @@ function basicTokenizeForSearch(text: string): string[] {
     .filter((word) => word.length > 2);
 
   return [...new Set(words)];
-}
-
-/**
- * Checks if a token is a common English stopword
- */
-function isStopword(token: string): boolean {
-  const stopwords = new Set([
-    'a',
-    'an',
-    'and',
-    'are',
-    'as',
-    'at',
-    'be',
-    'by',
-    'for',
-    'from',
-    'has',
-    'he',
-    'in',
-    'is',
-    'it',
-    'its',
-    'of',
-    'on',
-    'that',
-    'the',
-    'to',
-    'was',
-    'will',
-    'with',
-    'but',
-    'or',
-    'not',
-    'this',
-    'these',
-    'those',
-    'i',
-    'me',
-    'my',
-    'myself',
-    'we',
-    'our',
-    'ours',
-    'you',
-    'your',
-    'yours',
-    'he',
-    'him',
-    'his',
-    'she',
-    'her',
-    'hers',
-    'it',
-    'its',
-    'they',
-    'them',
-    'their',
-    'theirs',
-    'what',
-    'which',
-    'who',
-    'whom',
-    'this',
-    'that',
-    'these',
-    'those',
-    'am',
-    'is',
-    'are',
-    'was',
-    'were',
-    'be',
-    'been',
-    'being',
-    'have',
-    'has',
-    'had',
-    'do',
-    'does',
-    'did',
-    'will',
-    'would',
-    'could',
-    'should',
-    'may',
-    'might',
-    'must',
-    'shall',
-    'can',
-    'will',
-    'about',
-    'above',
-    'after',
-    'again',
-    'against',
-    'all',
-    'am',
-    'an',
-    'and',
-    'any',
-    'are',
-    'as',
-    'at',
-    'be',
-    'because',
-    'been',
-    'before',
-    'being',
-    'below',
-    'between',
-    'both',
-    'but',
-    'by',
-    'can',
-    'cannot',
-    'could',
-    'did',
-    'do',
-    'does',
-    'doing',
-    'down',
-    'during',
-    'each',
-    'few',
-    'for',
-    'from',
-    'further',
-    'had',
-    'has',
-    'have',
-    'having',
-    'he',
-    'her',
-    'here',
-    'hers',
-    'herself',
-    'him',
-    'himself',
-    'his',
-    'how',
-    'i',
-    'if',
-    'in',
-    'into',
-    'is',
-    'it',
-    'its',
-    'itself',
-    'me',
-    'more',
-    'most',
-    'my',
-    'myself',
-    'no',
-    'nor',
-    'not',
-    'of',
-    'off',
-    'on',
-    'once',
-    'only',
-    'or',
-    'other',
-    'ought',
-    'our',
-    'ours',
-    'ourselves',
-    'out',
-    'over',
-    'own',
-    'same',
-    'she',
-    'should',
-    'so',
-    'some',
-    'such',
-    'than',
-    'that',
-    'the',
-    'their',
-    'theirs',
-    'them',
-    'themselves',
-    'then',
-    'there',
-    'these',
-    'they',
-    'this',
-    'those',
-    'through',
-    'to',
-    'too',
-    'under',
-    'until',
-    'up',
-    'very',
-    'was',
-    'we',
-    'were',
-    'what',
-    'when',
-    'where',
-    'which',
-    'while',
-    'who',
-    'whom',
-    'why',
-    'will',
-    'with',
-    'would',
-    'you',
-    'your',
-    'yours',
-    'yourself',
-    'yourselves',
-  ]);
-
-  return stopwords.has(token);
 }
 
 /**
