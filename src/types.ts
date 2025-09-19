@@ -48,6 +48,24 @@ export type Config = {
   folders: string[];
   excludes?: string[];
   output?: string;
+  includes?: string[];
+  backupDir?: string;
+  duplicateDir?: string;
+  outputDir?: string;
+  dataFile?: string;
+  timestampFormat?: string;
+  tokenization?: {
+    enabled?: boolean;
+    minTokenLength?: number;
+    maxTokenLength?: number;
+    removeStopwords?: boolean;
+    useStemming?: boolean;
+    customStopwords?: string[];
+    fieldsToTokenize?: string[];
+  };
+  index?: {
+    compress?: boolean;
+  };
 };
 
 export type OutputData = {

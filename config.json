@@ -3,8 +3,11 @@
     "H:\\E-Books"
   ],
   "excludes": [
+    "H:\\E-Books\\backup",
+    "H:\\E-Books\\duplicates",
     "H:\\E-Books\\excludes"
   ],
+  "backupDir": "H:\\E-Books\\backup",
   "duplicateDir": "H:\\E-Books\\duplicates",
   "outputDir": "output",
   "output": "books.json",
@@ -20,5 +23,8 @@
     "fieldsToTokenize": [
       "filename"
     ]
+  },
+  "index": {
+    "compress": false
   }
 }
