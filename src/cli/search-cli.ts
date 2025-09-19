@@ -12,45 +12,77 @@ program.name('search').description('Search ebooks by full-text content and metad
 program
   .command('build')
   .description('Build search index from ebook files')
-  .requiredOption('-d, --dir <path>', 'directory containing ebook files')
+  .option('-d, --dir <path>', 'directory containing ebook files')
+  .option('-f, --files <files...>', 'specific files to index (alternative to -d)')
   .option('-i, --index-file <path>', 'path to save search index file', './search-index.json')
   .option('-p, --pattern <pattern>', 'file pattern to match (e.g., *.pdf,*.epub)', '*.pdf,*.epub')
   .option('-v, --verbose', 'enable verbose output')
   .action(async (options) => {
-    const { dir, indexFile, pattern, verbose } = options;
+    const { dir, files, indexFile, pattern, verbose } = options;
 
-    if (!fs.existsSync(dir)) {
-      console.error(`Error: Directory not found: ${dir}`);
-      process.exit(1);
-    }
+    let ebookFiles: string[] = [];
 
-    try {
+    if (files && files.length > 0) {
+      // Use specific files provided
+      ebookFiles = files;
+      if (verbose) {
+        console.log(`Indexing ${files.length} specific file(s)`);
+        console.log(`Mode: append`);
+      }
+    } else if (dir) {
+      // Use directory scanning
+      if (!fs.existsSync(dir)) {
+        console.error(`Error: Directory not found: ${dir}`);
+        process.exit(1);
+      }
+
       if (verbose) {
         console.log(`Building search index from directory: ${dir}`);
         console.log(`Index file: ${indexFile}`);
         console.log(`File pattern: ${pattern}`);
+        console.log(`Mode: append`);
       }
 
       // Find ebook files
-      const ebookFiles = findEbookFiles(dir, pattern.split(','));
-      if (ebookFiles.length === 0) {
-        console.log('No ebook files found matching the pattern.');
-        return;
-      }
+      ebookFiles = findEbookFiles(dir, pattern.split(','));
+    } else {
+      console.error('Error: Either -d (directory) or -f (files) must be specified');
+      process.exit(1);
+    }
 
-      if (verbose) {
-        console.log(`Found ${ebookFiles.length} ebook files`);
-      }
+    if (ebookFiles.length === 0) {
+      console.log('No ebook files found.');
+      return;
+    }
 
+    if (verbose) {
+      console.log(`Found ${ebookFiles.length} ebook files`);
+      ebookFiles.forEach((file) => console.log(`  ${file}`));
+    }
+
+    try {
       // Build index
       const search = new EbookSearch(indexFile);
-      await search.buildIndex(ebookFiles, { verbose });
+
+      // Load existing index for appending
+      if (search.indexExists()) {
+        if (verbose) {
+          console.log(`Loading existing index from: ${indexFile}`);
+        }
+        await search.loadIndex();
+        const existingStats = search.getStats();
+        if (verbose) {
+          console.log(`Existing index contains ${existingStats.documentCount} documents`);
+        }
+      }
+
+      await search.buildIndex(ebookFiles, { verbose, append: true });
 
       // Save index
       await search.saveIndex();
 
       const stats = search.getStats();
-      console.log(`\nSearch index built successfully!`);
+      console.log(`\nSearch index updated successfully!`);
       console.log(`Documents indexed: ${stats.documentCount}`);
       console.log(`Index file size: ${formatBytes(stats.indexSize)}`);
       console.log(`Index saved to: ${indexFile}`);
@@ -152,6 +184,19 @@ program
       console.log(`Total files processed: ${result.totalProcessed}`);
       console.log(`Total documents in index: ${stats.documentCount}`);
       console.log(`Index file size: ${formatBytes(stats.indexSize)}`);
+
+      // Display failed files information
+      if (result.failed > 0) {
+        console.log(`\n❌ Failed files: ${result.failed}`);
+        if (result.failedFiles.length > 0) {
+          console.log('Failed files list:');
+          result.failedFiles.forEach((failed, index) => {
+            console.log(`  ${index + 1}. ${path.basename(failed.path)}`);
+            console.log(`     Error: ${failed.error}`);
+            console.log(`     Path: ${failed.path}`);
+          });
+        }
+      }
     } catch (error) {
       console.error('Failed to update search index:', (error as Error).message);
       process.exit(1);

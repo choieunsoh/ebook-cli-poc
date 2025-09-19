@@ -4,7 +4,7 @@
 
 import * as fs from 'fs';
 import * as zlib from 'zlib';
-import { tokenizeForIndexing } from './tokenizer';
+import { tokenizeForIndexing, tokenizeMetadataForIndexing } from './tokenizer';
 
 export interface SearchDocument {
   id: string;
@@ -42,9 +42,10 @@ export class SearchIndex {
   private documents: Map<string, SearchDocument> = new Map();
   private invertedIndex: Map<string, Set<string>> = new Map(); // term -> document IDs
   private metadata: IndexMetadata | null = null;
+  private compress: boolean = true;
 
-  constructor() {
-    // Simple inverted index
+  constructor(compress: boolean = true) {
+    this.compress = compress;
   }
 
   /**
@@ -95,7 +96,7 @@ export class SearchIndex {
 
     // Also index title and author if present
     if (doc.title) {
-      const titleTokens = tokenizeForIndexing(doc.title);
+      const titleTokens = tokenizeMetadataForIndexing(doc.title);
       for (const token of titleTokens) {
         if (!this.invertedIndex.has(token)) {
           this.invertedIndex.set(token, new Set());
@@ -105,7 +106,7 @@ export class SearchIndex {
     }
 
     if (doc.author) {
-      const authorTokens = tokenizeForIndexing(doc.author);
+      const authorTokens = tokenizeMetadataForIndexing(doc.author);
       for (const token of authorTokens) {
         if (!this.invertedIndex.has(token)) {
           this.invertedIndex.set(token, new Set());
@@ -211,6 +212,13 @@ export class SearchIndex {
   }
 
   /**
+   * Checks if a document exists in the index
+   */
+  hasDocument(id: string): boolean {
+    return this.documents.has(id);
+  }
+
+  /**
    * Gets the total number of documents in the index
    */
   getDocumentCount(): number {
@@ -232,7 +240,7 @@ export class SearchIndex {
   }
 
   /**
-   * Exports the index to a file (compressed)
+   * Exports the index to a file (optionally compressed)
    */
   async exportToFile(filePath: string): Promise<void> {
     const data: IndexData = {
@@ -242,8 +250,13 @@ export class SearchIndex {
     };
 
     const jsonData = JSON.stringify(data, null, 2);
-    const compressedData = zlib.gzipSync(jsonData);
-    await fs.promises.writeFile(filePath, compressedData);
+
+    if (this.compress) {
+      const compressedData = zlib.gzipSync(jsonData);
+      await fs.promises.writeFile(filePath, compressedData);
+    } else {
+      await fs.promises.writeFile(filePath, jsonData);
+    }
   }
 
   /**

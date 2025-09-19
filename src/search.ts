@@ -47,6 +47,8 @@ export interface IncrementalBuildResult {
   unchanged: number;
   totalProcessed: number;
   isFullRebuild: boolean;
+  failed: number;
+  failedFiles: Array<{ path: string; error: string }>;
 }
 
 export class EbookSearch {
@@ -54,8 +56,8 @@ export class EbookSearch {
   private indexFilePath: string;
 
   constructor(indexFilePath: string = 'search-index.json') {
-    this.index = new SearchIndex();
     this.indexFilePath = indexFilePath;
+    this.index = new SearchIndex(this.getIndexCompressionSetting());
   }
 
   /**
@@ -80,11 +82,11 @@ export class EbookSearch {
   /**
    * Builds the search index from ebook files
    */
-  async buildIndex(ebookFiles: string[], options: { verbose?: boolean } = {}): Promise<void> {
-    const { verbose = false } = options;
+  async buildIndex(ebookFiles: string[], options: { verbose?: boolean; append?: boolean } = {}): Promise<void> {
+    const { verbose = false, append = false } = options;
 
     if (verbose) {
-      console.log(`Building search index from ${ebookFiles.length} files...`);
+      console.log(`${append ? 'Appending to' : 'Building'} search index from ${ebookFiles.length} files...`);
     }
 
     for (const filePath of ebookFiles) {
@@ -114,7 +116,15 @@ export class EbookSearch {
           title: path.basename(filePath, path.extname(filePath)),
         };
 
-        this.index.addDocument(doc, textResult.text); // Index full text but only store excerpt
+        // Check if document already exists when appending
+        if (append && this.index.hasDocument(docId)) {
+          if (verbose) {
+            console.log(`  Updating existing document: ${docId}`);
+          }
+          this.index.updateDocument(doc, textResult.text);
+        } else {
+          this.index.addDocument(doc, textResult.text); // Index full text but only store excerpt
+        }
 
         if (verbose) {
           console.log(`  Indexed ${textResult.wordCount || 0} words`);
@@ -127,7 +137,7 @@ export class EbookSearch {
     }
 
     if (verbose) {
-      console.log(`Index built with ${this.index.getDocumentCount()} documents`);
+      console.log(`Index ${append ? 'updated' : 'built'} with ${this.index.getDocumentCount()} documents`);
     }
   }
 
@@ -400,6 +410,26 @@ export class EbookSearch {
   }
 
   /**
+   * Gets the index compression setting from config.json
+   */
+  private getIndexCompressionSetting(): boolean {
+    try {
+      const configPath = path.join(process.cwd(), 'config.json');
+      if (!fs.existsSync(configPath)) {
+        return true; // Default to compression enabled
+      }
+
+      const configData = fs.readFileSync(configPath, 'utf-8');
+      const config = JSON.parse(configData);
+
+      return config.index?.compress !== false; // Default to true if not specified
+    } catch (error) {
+      console.warn('Warning: Could not read config.json for compression setting:', error);
+      return true; // Default to compression enabled
+    }
+  }
+
+  /**
    * Performs a full rebuild of the index
    */
   private async performFullRebuild(
@@ -423,6 +453,8 @@ export class EbookSearch {
     const documents: SearchDocument[] = [];
     const fullTexts: string[] = [];
     let processedCount = 0;
+    let failedCount = 0;
+    const failedFiles: Array<{ path: string; error: string }> = [];
 
     for (const entry of limitedEntries) {
       try {
@@ -436,6 +468,8 @@ export class EbookSearch {
           if (verbose) {
             console.warn(`Failed to extract text from ${entry.fileMetadata.path}: ${textResult.error}`);
           }
+          failedCount++;
+          failedFiles.push({ path: entry.fileMetadata.path, error: textResult.error });
           continue;
         }
 
@@ -461,6 +495,8 @@ export class EbookSearch {
         if (verbose) {
           console.error(`Error processing ${entry.fileMetadata.path}:`, error);
         }
+        failedCount++;
+        failedFiles.push({ path: entry.fileMetadata.path, error: (error as Error).message });
       }
     }
 
@@ -481,6 +517,8 @@ export class EbookSearch {
       unchanged: 0,
       totalProcessed: processedCount,
       isFullRebuild: true,
+      failed: failedCount,
+      failedFiles,
     };
   }
 
@@ -528,6 +566,8 @@ export class EbookSearch {
 
     let addedCount = 0;
     let modifiedCount = 0;
+    let failedCount = 0;
+    const failedFiles: Array<{ path: string; error: string }> = [];
 
     // Process added files
     if (changes.added.length > 0) {
@@ -544,6 +584,8 @@ export class EbookSearch {
             if (verbose) {
               console.warn(`Failed to extract text from ${entry.fileMetadata.path}: ${textResult.error}`);
             }
+            failedCount++;
+            failedFiles.push({ path: entry.fileMetadata.path, error: textResult.error });
             continue;
           }
 
@@ -564,6 +606,8 @@ export class EbookSearch {
           if (verbose) {
             console.error(`Error adding ${entry.fileMetadata.path}:`, error);
           }
+          failedCount++;
+          failedFiles.push({ path: entry.fileMetadata.path, error: (error as Error).message });
         }
       }
       this.index.addDocumentsBatch(addedDocs, addedTexts);
@@ -582,6 +626,8 @@ export class EbookSearch {
             if (verbose) {
               console.warn(`Failed to extract text from ${entry.fileMetadata.path}: ${textResult.error}`);
             }
+            failedCount++;
+            failedFiles.push({ path: entry.fileMetadata.path, error: textResult.error });
             continue;
           }
 
@@ -602,6 +648,8 @@ export class EbookSearch {
           if (verbose) {
             console.error(`Error updating ${entry.fileMetadata.path}:`, error);
           }
+          failedCount++;
+          failedFiles.push({ path: entry.fileMetadata.path, error: (error as Error).message });
         }
       }
       this.index.updateDocumentsBatch(
@@ -635,6 +683,8 @@ export class EbookSearch {
       unchanged: changes.unchanged,
       totalProcessed,
       isFullRebuild: false,
+      failed: failedCount,
+      failedFiles,
     };
   }
 
@@ -695,6 +745,8 @@ export class EbookSearch {
     const batchGenerator = this.createBatchGenerator(changedEntries, batchSize);
     const batchFiles: string[] = [];
     let totalProcessed = 0;
+    let totalFailed = 0;
+    const allFailedFiles: Array<{ path: string; error: string }> = [];
     let batchIndex = 0;
     const totalFiles = Math.min(changedEntries.length, maxFiles);
 
@@ -708,7 +760,7 @@ export class EbookSearch {
       }
 
       // Create a temporary index for this batch
-      const batchIndexInstance = new SearchIndex();
+      const batchIndexInstance = new SearchIndex(this.getIndexCompressionSetting());
       const batchDocuments: SearchDocument[] = [];
       const batchFullTexts: string[] = [];
 
@@ -723,6 +775,8 @@ export class EbookSearch {
             if (verbose) {
               console.warn(`  Failed to extract text from ${entry.fileMetadata.path}: ${textResult.error}`);
             }
+            totalFailed++;
+            allFailedFiles.push({ path: entry.fileMetadata.path, error: textResult.error });
             continue;
           }
 
@@ -747,6 +801,8 @@ export class EbookSearch {
           if (verbose) {
             console.error(`  Error processing ${entry.fileMetadata.path}:`, error);
           }
+          totalFailed++;
+          allFailedFiles.push({ path: entry.fileMetadata.path, error: (error as Error).message });
         }
       }
 
@@ -772,7 +828,7 @@ export class EbookSearch {
 
       try {
         // Create a temporary index instance to load the compressed batch file
-        const tempIndex = new SearchIndex();
+        const tempIndex = new SearchIndex(this.getIndexCompressionSetting());
         await tempIndex.importFromFile(batchFile);
         const documents = tempIndex.getAllDocuments();
         this.index.addDocumentsBatch(documents);
@@ -810,6 +866,8 @@ export class EbookSearch {
       unchanged: changes.unchanged,
       totalProcessed: totalProcessedIncludingDeletes,
       isFullRebuild: false,
+      failed: totalFailed,
+      failedFiles: allFailedFiles,
     };
   }
   private async performBatchRebuild(
@@ -841,6 +899,8 @@ export class EbookSearch {
     const batchGenerator = this.createBatchGenerator(limitedEntries, batchSize);
     const batchFiles: string[] = [];
     let totalProcessed = 0;
+    let totalFailed = 0;
+    const allFailedFiles: Array<{ path: string; error: string }> = [];
     let batchIndex = 0;
     const totalFiles = limitedEntries.length;
 
@@ -854,7 +914,7 @@ export class EbookSearch {
       }
 
       // Create a temporary index for this batch
-      const batchIndexInstance = new SearchIndex();
+      const batchIndexInstance = new SearchIndex(this.getIndexCompressionSetting());
       const batchDocuments: SearchDocument[] = [];
       const batchFullTexts: string[] = [];
 
@@ -869,6 +929,8 @@ export class EbookSearch {
             if (verbose) {
               console.warn(`  Failed to extract text from ${entry.fileMetadata.path}: ${textResult.error}`);
             }
+            totalFailed++;
+            allFailedFiles.push({ path: entry.fileMetadata.path, error: textResult.error });
             continue;
           }
 
@@ -893,6 +955,8 @@ export class EbookSearch {
           if (verbose) {
             console.error(`  Error processing ${entry.fileMetadata.path}:`, error);
           }
+          totalFailed++;
+          allFailedFiles.push({ path: entry.fileMetadata.path, error: (error as Error).message });
         }
       }
 
@@ -930,6 +994,8 @@ export class EbookSearch {
       unchanged: 0,
       totalProcessed,
       isFullRebuild: true,
+      failed: totalFailed,
+      failedFiles: allFailedFiles,
     };
   }
 
@@ -956,7 +1022,7 @@ export class EbookSearch {
 
       try {
         // Create a temporary index instance to load the compressed batch file
-        const tempIndex = new SearchIndex();
+        const tempIndex = new SearchIndex(this.getIndexCompressionSetting());
         await tempIndex.importFromFile(batchFile);
         const documents = tempIndex.getAllDocuments();
         this.index.addDocumentsBatch(documents);
