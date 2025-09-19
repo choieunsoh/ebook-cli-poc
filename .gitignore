@@ -160,7 +160,7 @@ out/
 dist/
 build/
 *.js.map
-*.d.ts
+# *.d.ts  # Commented out - we have manual type declarations that should be tracked
 
 output/
 images/

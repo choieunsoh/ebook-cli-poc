@@ -40,6 +40,7 @@ export default [
       '.nyc_output/**',
       '*.log',
       '.env*',
+      '**/*.d.ts',
     ],
   },
 ];
