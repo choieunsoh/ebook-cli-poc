@@ -1037,6 +1037,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/stopword@npm:^2.0.3":
+  version: 2.0.3
+  resolution: "@types/stopword@npm:2.0.3"
+  checksum: 10c0/f525530936c3caf36565c252be4150c3d27cf8acf2055124c569d7b83afc8f98683da55098c1613c85189dcc9f38392be44dfc491b430e1c53a8591e10f07111
+  languageName: node
+  linkType: hard
+
 "@types/webidl-conversions@npm:*":
   version: 7.0.3
   resolution: "@types/webidl-conversions@npm:7.0.3"
@@ -1928,6 +1935,7 @@ __metadata:
     "@types/node": "npm:^24.3.1"
     "@types/pdf-parse": "npm:^1.1.5"
     "@types/sqlite3": "npm:^5.1.0"
+    "@types/stopword": "npm:^2.0.3"
     "@typescript-eslint/eslint-plugin": "npm:^8.42.0"
     "@typescript-eslint/parser": "npm:^8.42.0"
     "@xenova/transformers": "npm:^2.17.2"
@@ -1952,6 +1960,7 @@ __metadata:
     prettier: "npm:^3.6.2"
     sharp: "npm:^0.34.3"
     sqlite3: "npm:^5.1.7"
+    stopword: "npm:^3.1.5"
     typescript: "npm:^5.9.2"
   bin:
     ebook: ./dist/cli/search-cli.js
@@ -4709,6 +4718,13 @@ __metadata:
   dependencies:
     minipass: "npm:^3.1.1"
   checksum: 10c0/5cfae216ae02dcd154d1bbed2d0a60038a4b3a2fcaac3c7e47401ff4e058e551ee74cfdba618871bf168cd583db7b8324f94af6747d4303b73cd4c3f6dc5c9c2
+  languageName: node
+  linkType: hard
+
+"stopword@npm:^3.1.5":
+  version: 3.1.5
+  resolution: "stopword@npm:3.1.5"
+  checksum: 10c0/b252d9fa1b3cee80746529465416ca22f60c77ae2076340cb83d3d5329baaa6658e1e641b7cd194257b9d4d2f4f2829210398a1553ab212c5f8d3606e54795df
   languageName: node
   linkType: hard
 

@@ -48,7 +48,8 @@
     "pdfjs-dist": "^5.4.149",
     "pdfreader": "^3.0.7",
     "sharp": "^0.34.3",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "stopword": "^3.1.5"
   },
   "devDependencies": {
     "@types/adm-zip": "^0",
@@ -56,6 +57,7 @@
     "@types/node": "^24.3.1",
     "@types/pdf-parse": "^1.1.5",
     "@types/sqlite3": "^5.1.0",
+    "@types/stopword": "^2.0.3",
     "@typescript-eslint/eslint-plugin": "^8.42.0",
     "@typescript-eslint/parser": "^8.42.0",
     "eslint": "^9.35.0",
