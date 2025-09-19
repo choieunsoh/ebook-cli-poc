@@ -19,6 +19,7 @@ export interface TextExtractionResult {
   skipped?: boolean;
   reason?: string;
   source?: string; // Indicates where the text was extracted from (e.g., 'pdf-content', 'filename-fallback')
+  success?: boolean; // New field to indicate success
 }
 
 export interface TextExtractionOptions {
@@ -460,6 +461,97 @@ function loadConfig(): { backupDir?: string; [key: string]: unknown } {
 }
 
 /**
+ * Attempts to repair a corrupted EPUB file using epubcheck
+ */
+async function repairEPUBWithEpubCheck(
+  filePath: string,
+): Promise<{ repairedPath: string | null; success: boolean; error?: string }> {
+  try {
+    // Load config to get backup directory
+    const config = loadConfig();
+    const backupDir = config.backupDir || path.dirname(filePath);
+
+    // Ensure backup directory exists
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+      console.log(`Created backup directory: ${backupDir}`);
+    }
+
+    // Create backup of original EPUB before any potential repair operations
+    const fileName = path.basename(filePath, path.extname(filePath));
+    const timestamp = Date.now();
+    const backupPath = path.join(backupDir, `${fileName}_backup_${timestamp}.epub`);
+
+    console.log(`Creating backup of original EPUB: ${backupPath.replace(/\\/g, '/')}`);
+    fs.copyFileSync(filePath, backupPath);
+    console.log(`Backup created successfully`);
+
+    // Use dynamic import to avoid type issues (epub-check has no types)
+    // @ts-expect-error - epub-check has no type definitions
+    const epubCheckModule = await import('epub-check');
+    const epubCheck = epubCheckModule.default as (filePath: string) => Promise<{
+      pass: boolean;
+      messages: Array<{ message?: string; [key: string]: unknown }>;
+    }>;
+
+    // For repair, we'll use epubcheck to validate
+    // Note: epubcheck is primarily a validator, not a repair tool like QPDF
+    // In a real repair scenario, we would attempt to fix common EPUB issues here
+    console.log(`Validating EPUB with epubcheck...`);
+    const result = await epubCheck(filePath);
+
+    if (result.pass) {
+      console.log(`EPUB validation passed, no repair needed: ${filePath}`);
+      console.log(`Backup file created at: ${backupPath.replace(/\\/g, '/')}`);
+
+      // Since no repair was needed, we could optionally remove the backup
+      // But let's keep it for safety - user can clean up manually if desired
+      return { repairedPath: filePath, success: true };
+    } else {
+      console.log(`EPUB validation failed with ${result.messages.length} issues`);
+
+      // Log the specific validation errors
+      if (result.messages && result.messages.length > 0) {
+        console.log('Validation errors:');
+        result.messages.slice(0, 5).forEach((msg, index) => {
+          const message = typeof msg === 'string' ? msg : msg.message || 'Unknown error';
+          console.log(`  ${index + 1}. ${message}`);
+        });
+        if (result.messages.length > 5) {
+          console.log(`  ... and ${result.messages.length - 5} more issues`);
+        }
+      }
+
+      // For now, we can't automatically repair EPUBs like PDFs
+      // In a more advanced implementation, we could try to fix common issues:
+      // - Fix malformed XML/HTML
+      // - Repair missing or corrupted files in the ZIP structure
+      // - Fix OPF/manifest issues
+      // - Repair navigation document problems
+
+      console.log(`EPUB repair not implemented yet. Original file preserved.`);
+      console.log(`Backup available at: ${backupPath.replace(/\\/g, '/')}`);
+
+      return {
+        repairedPath: null,
+        success: false,
+        error: `EPUB validation failed: ${result.messages.length} issues found. Backup created at ${backupPath}`,
+      };
+    }
+  } catch (error) {
+    console.error(`Error during EPUB repair attempt: ${(error as Error).message}`);
+
+    // Even if validation failed, the backup was created successfully
+    // The original file remains intact
+    return {
+      repairedPath: null,
+      success: false,
+      error: `EPUB repair failed: ${(error as Error).message}. Original file preserved.`,
+    };
+  }
+}
+
+/**
  * Extracts text content from a PDF file with memory management
  */
 export async function extractTextFromPDF(
@@ -553,6 +645,7 @@ export async function extractTextFromPDF(
               text,
               wordCount,
               source: 'pdf-content',
+              success: true,
             };
           } else {
             lastError = result.error || `No text extracted with ${extractor.name}`;
@@ -595,6 +688,7 @@ export async function extractTextFromPDF(
               text: retryResult.text,
               wordCount,
               source: 'pdf-content',
+              success: true,
             };
           } else {
             console.warn(`Repair attempt failed: ${retryResult.error}`);
@@ -616,6 +710,7 @@ export async function extractTextFromPDF(
         wordCount: cleanedFileName.split(/\s+/).filter((word: string) => word.length > 0).length,
         error: `All PDF extraction methods failed. Repair attempt also failed. Using cleaned filename as content. Last error: ${lastError}`,
         source: 'filename-fallback',
+        success: false,
       };
     } catch (pdfError) {
       // Handle all PDF parsing errors gracefully, not just memory-related ones
@@ -691,6 +786,7 @@ export async function extractTextFromEPUB(
             text: result.text,
             wordCount,
             source: 'epub-content',
+            success: true,
           };
         } else {
           lastError = result.error || `No text extracted with ${extractor.name}`;
@@ -702,8 +798,38 @@ export async function extractTextFromEPUB(
       }
     }
 
-    // All EPUB extractors failed, fall back to filename
+    // All EPUB extractors failed
     console.log(`All EPUB extraction methods failed. Last error: ${lastError}`);
+    console.log(`Attempting EPUB repair and retry...`);
+
+    // Try to repair the EPUB and retry with epub-parser
+    const repairResult = await repairEPUBWithEpubCheck(filePath);
+    if (repairResult.success && repairResult.repairedPath) {
+      try {
+        console.log(`Retrying extraction with repaired EPUB using epub-parser...`);
+        const retryResult = await extractWithEpubParser(repairResult.repairedPath, maxMemoryUsageMB);
+        if (retryResult.success && retryResult.text.trim()) {
+          const wordCount = retryResult.text.split(/\s+/).filter((word: string) => word.length > 0).length;
+          console.log(`Successfully extracted text from repaired EPUB (${wordCount} words)`);
+
+          return {
+            text: retryResult.text,
+            wordCount,
+            source: 'epub-content',
+            success: true,
+          };
+        } else {
+          console.warn(`Repair attempt failed: ${retryResult.error}`);
+        }
+      } catch (repairRetryError) {
+        console.warn(`Error during repair retry: ${(repairRetryError as Error).message}`);
+      }
+    } else {
+      console.warn(`EPUB repair failed: ${repairResult.error}`);
+    }
+
+    // All EPUB extractors and repair failed, fall back to filename
+    console.log(`All EPUB extraction methods and repair failed. Last error: ${lastError}`);
     console.log(`Falling back to filename extraction for EPUB...`);
 
     const fileName = path.basename(filePath, path.extname(filePath));
@@ -715,6 +841,7 @@ export async function extractTextFromEPUB(
       wordCount: cleanedFileName.split(/\s+/).filter((word: string) => word.length > 0).length,
       error: `All EPUB extraction methods failed. Using cleaned filename as content. Last error: ${lastError}`,
       source: 'filename-fallback',
+      success: false,
     };
   } catch (error) {
     return {

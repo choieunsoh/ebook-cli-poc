@@ -8,7 +8,7 @@ import { ChangeDetector } from './changeDetector';
 import { DataFileContent, DataFileReader } from './dataFileReader';
 import { IndexMetadata, SearchDocument, SearchIndex, SearchResult } from './searchIndex';
 import { extractTextFromFile, TextExtractionOptions } from './textExtractor';
-import { tokenizeQuery } from './tokenizer';
+import { tokenizeForIndexing, tokenizeQuery } from './tokenizer';
 
 export interface SearchOptions {
   indexFile?: string;
@@ -89,6 +89,9 @@ export class EbookSearch {
       console.log(`${append ? 'Appending to' : 'Building'} search index from ${ebookFiles.length} files...`);
     }
 
+    let successCount = 0;
+    let failureCount = 0;
+
     for (const filePath of ebookFiles) {
       try {
         if (verbose) {
@@ -97,12 +100,19 @@ export class EbookSearch {
 
         // Extract text content
         const textResult = await extractTextFromFile(filePath);
-        if (textResult.error) {
+        if (textResult.error && !textResult.success) {
           if (verbose) {
             console.warn(`Failed to extract text from ${filePath}: ${textResult.error}`);
           }
+          failureCount++;
           continue;
         }
+
+        // Count success
+        successCount++;
+
+        // Tokenize the extracted text
+        const tokens = tokenizeForIndexing(textResult.text);
 
         // Create search document
         const docId = this.generateDocumentId(filePath);
@@ -127,17 +137,19 @@ export class EbookSearch {
         }
 
         if (verbose) {
-          console.log(`  Indexed ${textResult.wordCount || 0} words`);
+          console.log(`  Indexed ${textResult.wordCount || 0} words, ${tokens.length} tokens`);
         }
       } catch (error) {
         if (verbose) {
           console.error(`Error processing ${filePath}:`, error);
         }
+        failureCount++;
       }
     }
 
     if (verbose) {
       console.log(`Index ${append ? 'updated' : 'built'} with ${this.index.getDocumentCount()} documents`);
+      console.log(`Extraction results: ${successCount} successful, ${failureCount} failed`);
     }
   }
 
@@ -464,7 +476,7 @@ export class EbookSearch {
 
         // Extract text content
         const textResult = await extractTextFromFile(entry.fileMetadata.path, extractionOptions);
-        if (textResult.error) {
+        if (textResult.error && !textResult.success) {
           if (verbose) {
             console.warn(`Failed to extract text from ${entry.fileMetadata.path}: ${textResult.error}`);
           }
@@ -472,6 +484,9 @@ export class EbookSearch {
           failedFiles.push({ path: entry.fileMetadata.path, error: textResult.error });
           continue;
         }
+
+        // Tokenize the extracted text
+        const tokens = tokenizeForIndexing(textResult.text);
 
         // Create search document
         const docId = this.generateDocumentId(entry.fileMetadata.path);
@@ -489,7 +504,7 @@ export class EbookSearch {
         processedCount++;
 
         if (verbose) {
-          console.log(`  Indexed ${textResult.wordCount || 0} words`);
+          console.log(`  Indexed ${textResult.wordCount || 0} words, ${tokens.length} tokens`);
         }
       } catch (error) {
         if (verbose) {
@@ -580,7 +595,7 @@ export class EbookSearch {
           }
 
           const textResult = await extractTextFromFile(entry.fileMetadata.path, extractionOptions);
-          if (textResult.error) {
+          if (textResult.error && !textResult.success) {
             if (verbose) {
               console.warn(`Failed to extract text from ${entry.fileMetadata.path}: ${textResult.error}`);
             }
@@ -588,6 +603,9 @@ export class EbookSearch {
             failedFiles.push({ path: entry.fileMetadata.path, error: textResult.error });
             continue;
           }
+
+          // Tokenize the extracted text
+          const tokens = tokenizeForIndexing(textResult.text);
 
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
@@ -602,6 +620,10 @@ export class EbookSearch {
           addedDocs.push(doc);
           addedTexts.push(textResult.text);
           addedCount++;
+
+          if (verbose) {
+            console.log(`  Indexed ${textResult.wordCount || 0} words, ${tokens.length} tokens`);
+          }
         } catch (error) {
           if (verbose) {
             console.error(`Error adding ${entry.fileMetadata.path}:`, error);
@@ -631,6 +653,9 @@ export class EbookSearch {
             continue;
           }
 
+          // Tokenize the extracted text
+          const tokens = tokenizeForIndexing(textResult.text);
+
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
             id: docId,
@@ -644,6 +669,10 @@ export class EbookSearch {
           modifiedDocs.push(doc);
           modifiedTexts.push(textResult.text);
           modifiedCount++;
+
+          if (verbose) {
+            console.log(`  Indexed ${textResult.wordCount || 0} words, ${tokens.length} tokens`);
+          }
         } catch (error) {
           if (verbose) {
             console.error(`Error updating ${entry.fileMetadata.path}:`, error);
@@ -771,7 +800,7 @@ export class EbookSearch {
           }
 
           const textResult = await extractTextFromFile(entry.fileMetadata.path, extractionOptions);
-          if (textResult.error) {
+          if (textResult.error && !textResult.success) {
             if (verbose) {
               console.warn(`  Failed to extract text from ${entry.fileMetadata.path}: ${textResult.error}`);
             }
@@ -779,6 +808,9 @@ export class EbookSearch {
             allFailedFiles.push({ path: entry.fileMetadata.path, error: textResult.error });
             continue;
           }
+
+          // Tokenize the extracted text
+          const tokens = tokenizeForIndexing(textResult.text);
 
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
@@ -795,7 +827,7 @@ export class EbookSearch {
           totalProcessed++;
 
           if (verbose) {
-            console.log(`    Indexed ${textResult.wordCount || 0} words`);
+            console.log(`    Indexed ${textResult.wordCount || 0} words, ${tokens.length} tokens`);
           }
         } catch (error) {
           if (verbose) {
@@ -925,7 +957,7 @@ export class EbookSearch {
           }
 
           const textResult = await extractTextFromFile(entry.fileMetadata.path, extractionOptions);
-          if (textResult.error) {
+          if (textResult.error && !textResult.success) {
             if (verbose) {
               console.warn(`  Failed to extract text from ${entry.fileMetadata.path}: ${textResult.error}`);
             }
@@ -933,6 +965,9 @@ export class EbookSearch {
             allFailedFiles.push({ path: entry.fileMetadata.path, error: textResult.error });
             continue;
           }
+
+          // Tokenize the extracted text
+          const tokens = tokenizeForIndexing(textResult.text);
 
           const docId = this.generateDocumentId(entry.fileMetadata.path);
           const doc: SearchDocument = {
@@ -949,7 +984,7 @@ export class EbookSearch {
           totalProcessed++;
 
           if (verbose) {
-            console.log(`    Indexed ${textResult.wordCount || 0} words`);
+            console.log(`    Indexed ${textResult.wordCount || 0} words, ${tokens.length} tokens`);
           }
         } catch (error) {
           if (verbose) {
