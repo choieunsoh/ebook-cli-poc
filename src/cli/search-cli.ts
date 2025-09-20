@@ -143,7 +143,7 @@ program
   .option('-f, --force', 'force full rebuild instead of incremental update')
   .option('-v, --verbose', 'enable verbose output')
   .option('--max-file-size <mb>', 'maximum file size in MB to process', '100')
-  .option('--max-memory <value>', 'maximum memory usage (e.g., 2048, 8GB, 8192MB) before skipping files', '2048')
+  .option('--max-memory <value>', 'maximum memory usage (e.g., 2048, 8GB, 8192MB) before skipping files', '8GB')
   .option('--no-skip-large', 'do not skip large files (may cause memory issues)')
   .option('--no-partial', 'do not extract partial content from large files')
   .option('--max-pages <number>', 'maximum pages to extract from PDFs (0 = unlimited)', '0')

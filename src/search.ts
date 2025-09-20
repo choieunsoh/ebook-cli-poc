@@ -197,7 +197,7 @@ export class EbookSearch {
       verbose = false,
       forceFullRebuild = false,
       maxFileSizeMB = 500, // Increased for academic documents
-      maxMemoryUsageMB = 4096, // Increased to 4GB for full text indexing
+      maxMemoryUsageMB = 8192, // Increased to 8GB for full text indexing
       skipLargeFiles = false, // Don't skip large files for academic use
       extractPartialContent = false, // Extract full content for research
       maxPages = 0, // 0 = unlimited pages
@@ -1005,7 +1005,7 @@ export class EbookSearch {
       batchIndex++;
 
       // Check memory usage before processing batch
-      if (isMemoryUsageHigh(extractionOptions.maxMemoryUsageMB || 4096)) {
+      if (isMemoryUsageHigh(extractionOptions.maxMemoryUsageMB || 8192)) {
         console.warn(`Warning: Memory usage is high before batch ${batchIndex}. Forcing garbage collection...`);
         forceGarbageCollection();
       }
@@ -1181,7 +1181,7 @@ export class EbookSearch {
       batchIndex++;
 
       // Check memory usage before processing batch
-      if (isMemoryUsageHigh(extractionOptions.maxMemoryUsageMB || 4096)) {
+      if (isMemoryUsageHigh(extractionOptions.maxMemoryUsageMB || 8192)) {
         console.warn(`Warning: Memory usage is high before batch ${batchIndex}. Forcing garbage collection...`);
         forceGarbageCollection();
       }
