@@ -167,3 +167,6 @@ images/
 batch-indexes/
 
 search-index**
+
+# Configuration file (contains personal paths)
+config.json
