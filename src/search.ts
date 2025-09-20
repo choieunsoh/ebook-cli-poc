@@ -242,8 +242,10 @@ export class EbookSearch {
     const changeDetector = new ChangeDetector();
 
     // Check if we need a full rebuild
-    const isFullRebuild =
-      forceFullRebuild || !indexExists || changeDetector.hasDataFileChanged(dataFileContent, indexMetadata);
+    // If we have an existing index with documents but no metadata, treat it as incremental with missing metadata
+    const hasExistingDocuments = this.index.getDocumentCount() > 0;
+    const dataFileChanged = changeDetector.hasDataFileChanged(dataFileContent, indexMetadata);
+    const isFullRebuild = forceFullRebuild || !indexExists || (!hasExistingDocuments && dataFileChanged);
 
     if (isFullRebuild) {
       // Use batch processing if requested for full rebuilds
@@ -274,7 +276,7 @@ export class EbookSearch {
         }
         return await this.performBatchIncrementalUpdate(
           dataFileContent,
-          indexMetadata!,
+          indexMetadata,
           verbose,
           extractionOptions,
           batchSize,
@@ -287,7 +289,7 @@ export class EbookSearch {
         }
         return await this.performIncrementalUpdate(
           dataFileContent,
-          indexMetadata!,
+          indexMetadata,
           verbose,
           extractionOptions,
           maxFiles,
@@ -731,13 +733,21 @@ export class EbookSearch {
    */
   private async performIncrementalUpdate(
     dataFileContent: DataFileContent,
-    indexMetadata: IndexMetadata,
+    indexMetadata: IndexMetadata | null,
     verbose: boolean,
     extractionOptions: TextExtractionOptions,
     maxFiles: number,
   ): Promise<IncrementalBuildResult> {
     const changeDetector = new ChangeDetector();
-    const changes = changeDetector.detectChanges(dataFileContent, indexMetadata);
+
+    // If metadata is missing, create a minimal metadata structure for change detection
+    const workingMetadata = indexMetadata || {
+      lastUpdated: new Date().toISOString(),
+      totalFiles: 0,
+      indexedFiles: {},
+    };
+
+    const changes = changeDetector.detectChanges(dataFileContent, workingMetadata);
 
     // Limit the total number of files to process
     const totalChanges = changes.added.length + changes.modified.length + changes.deleted.length;
@@ -927,7 +937,7 @@ export class EbookSearch {
    */
   private async performBatchIncrementalUpdate(
     dataFileContent: DataFileContent,
-    indexMetadata: IndexMetadata,
+    indexMetadata: IndexMetadata | null,
     verbose: boolean,
     extractionOptions: TextExtractionOptions,
     batchSize: number,
@@ -935,7 +945,15 @@ export class EbookSearch {
     maxFiles: number,
   ): Promise<IncrementalBuildResult> {
     const changeDetector = new ChangeDetector();
-    const changes = changeDetector.detectChanges(dataFileContent, indexMetadata);
+
+    // If metadata is missing, create a minimal metadata structure for change detection
+    const workingMetadata = indexMetadata || {
+      lastUpdated: new Date().toISOString(),
+      totalFiles: 0,
+      indexedFiles: {},
+    };
+
+    const changes = changeDetector.detectChanges(dataFileContent, workingMetadata);
 
     // Limit the total number of files to process
     const totalChanges = changes.added.length + changes.modified.length + changes.deleted.length;

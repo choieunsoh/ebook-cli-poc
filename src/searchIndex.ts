@@ -322,10 +322,21 @@ export class SearchIndex {
     const baseFileName = basePath.split('/').pop() || basePath.split('\\').pop() || 'search-index';
     const indexBasePath = `${indexDir}/${baseFileName}`;
 
-    // Export metadata
+    // Export metadata - ensure we have valid metadata before export
     const metadataFile = `${indexBasePath}.metadata${extension}`;
+
+    // If metadata is null or missing, create minimal metadata
+    if (!this.metadata) {
+      console.warn('Warning: Index metadata is missing, creating minimal metadata for export');
+      this.metadata = {
+        lastUpdated: new Date().toISOString(),
+        totalFiles: this.documents.size,
+        indexedFiles: {},
+      };
+    }
+
     const metadataData = {
-      metadata: this.metadata || undefined,
+      metadata: this.metadata,
       documentCount: this.documents.size,
       invertedIndexSize: this.invertedIndex.size,
       splitFiles: true,
@@ -446,8 +457,20 @@ export class SearchIndex {
    */
   private async importFromSplitFiles(basePath: string, extension: string): Promise<void> {
     const manifestFile = `${basePath}.manifest${extension}`;
-    const manifestData = await this.readFile(manifestFile);
-    const manifest = JSON.parse(manifestData);
+
+    let manifest;
+    try {
+      const manifestData = await this.readFile(manifestFile);
+
+      // Check for empty manifest file
+      if (!manifestData.trim()) {
+        throw new Error(`Manifest file is empty: ${manifestFile}`);
+      }
+
+      manifest = JSON.parse(manifestData);
+    } catch (error) {
+      throw new Error(`Failed to load manifest file ${manifestFile}: ${(error as Error).message}`);
+    }
 
     // Clear existing data
     this.documents.clear();
@@ -455,9 +478,21 @@ export class SearchIndex {
 
     // Load metadata
     const metadataFile = `${basePath}.metadata${extension}`;
-    const metadataData = await this.readFile(metadataFile);
-    const metadata = JSON.parse(metadataData);
-    this.metadata = metadata.metadata || null;
+    try {
+      const metadataData = await this.readFile(metadataFile);
+
+      // Skip empty metadata files
+      if (!metadataData.trim()) {
+        console.warn(`Warning: Metadata file is empty: ${metadataFile}`);
+        this.metadata = null;
+      } else {
+        const metadata = JSON.parse(metadataData);
+        this.metadata = metadata.metadata || null;
+      }
+    } catch (error) {
+      console.warn(`Warning: Failed to load metadata file ${metadataFile}: ${(error as Error).message}`);
+      this.metadata = null;
+    }
 
     console.log(`Loading split index: ${manifest.totalDocuments} documents, ${manifest.totalTerms} terms`);
 
