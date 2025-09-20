@@ -1091,8 +1091,15 @@ export class EbookSearch {
       // Clear the batch index from memory immediately
       batchIndexInstance.clear();
 
-      // Force garbage collection and monitor memory
-      forceGarbageCollection();
+      // Force multiple garbage collection cycles for large batches
+      if (docCount > 100) {
+        forceGarbageCollection();
+        // Give the GC some time to work
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        forceGarbageCollection();
+      } else {
+        forceGarbageCollection();
+      }
 
       if (verbose) {
         const memUsage = getMemoryUsage();
@@ -1268,8 +1275,15 @@ export class EbookSearch {
       // Clear the batch index from memory immediately
       batchIndexInstance.clear();
 
-      // Force garbage collection and monitor memory
-      forceGarbageCollection();
+      // Force multiple garbage collection cycles for large batches
+      if (batchDocuments.length > 100) {
+        forceGarbageCollection();
+        // Give the GC some time to work
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        forceGarbageCollection();
+      } else {
+        forceGarbageCollection();
+      }
 
       if (verbose) {
         const memUsage = getMemoryUsage();

@@ -343,30 +343,114 @@ export class SearchIndex {
     };
     await this.writeFile(metadataFile, JSON.stringify(metadataData, null, 2));
 
-    // Export documents in chunks
-    const documents = Array.from(this.documents.values());
-    const docChunkSize = 1000; // Adjust based on memory constraints
+    // Export documents in chunks with aggressive memory management
+    const docChunkSize = 200; // Much smaller chunks for large indexes
     let docChunkIndex = 0;
+    let documentsProcessed = 0;
+    const totalDocuments = this.documents.size;
 
-    for (let i = 0; i < documents.length; i += docChunkSize) {
-      const chunk = documents.slice(i, i + docChunkSize);
-      const docFile = `${indexBasePath}.docs.${docChunkIndex.toString().padStart(5, '0')}${extension}`;
-      await this.writeFile(docFile, JSON.stringify(chunk, null, 2));
-      docChunkIndex++;
+    console.log(`Exporting ${totalDocuments} documents in chunks of ${docChunkSize}...`);
+
+    // Use streaming approach instead of iterators to avoid memory buildup
+    const documentIds = Array.from(this.documents.keys());
+
+    for (let i = 0; i < documentIds.length; i += docChunkSize) {
+      const chunk: SearchDocument[] = [];
+      const endIndex = Math.min(i + docChunkSize, documentIds.length);
+
+      // Process documents in current chunk
+      for (let j = i; j < endIndex; j++) {
+        const doc = this.documents.get(documentIds[j]);
+        if (doc) {
+          // Create a minimal document copy to reduce memory usage
+          chunk.push({
+            id: doc.id,
+            title: doc.title,
+            author: doc.author,
+            excerpt: doc.excerpt,
+            filePath: doc.filePath,
+            type: doc.type,
+            wordCount: doc.wordCount,
+            tokenCount: doc.tokenCount,
+          });
+          documentsProcessed++;
+        }
+      }
+
+      if (chunk.length > 0) {
+        const docFile = `${indexBasePath}.docs.${docChunkIndex.toString().padStart(5, '0')}${extension}`;
+
+        // Write and immediately clear chunk from memory
+        const jsonData = JSON.stringify(chunk, null, 2);
+        await this.writeFile(docFile, jsonData);
+        docChunkIndex++;
+
+        // Progress reporting every 20 chunks
+        if (docChunkIndex % 20 === 0) {
+          console.log(
+            `Exported ${documentsProcessed}/${totalDocuments} documents (${Math.round((documentsProcessed / totalDocuments) * 100)}%)`,
+          );
+
+          // Force garbage collection for large exports
+          if (global.gc) {
+            global.gc();
+          }
+        }
+      }
+
+      // Clear references immediately
+      chunk.length = 0;
     }
 
-    // Export inverted index in chunks
-    const invertedIndexEntries = Array.from(this.invertedIndex.entries());
-    const indexChunkSize = 10000; // Adjust based on memory constraints
+    // Export inverted index in chunks with aggressive memory management
+    const indexChunkSize = 2000; // Much smaller chunks for large indexes
     let indexChunkIndex = 0;
+    let indexEntriesProcessed = 0;
+    const totalIndexEntries = this.invertedIndex.size;
 
-    for (let i = 0; i < invertedIndexEntries.length; i += indexChunkSize) {
-      const chunk = invertedIndexEntries
-        .slice(i, i + indexChunkSize)
-        .map(([term, docIds]) => [term, Array.from(docIds)]);
-      const indexFile = `${indexBasePath}.index.${indexChunkIndex.toString().padStart(5, '0')}${extension}`;
-      await this.writeFile(indexFile, JSON.stringify(chunk, null, 2));
-      indexChunkIndex++;
+    console.log(`Exporting ${totalIndexEntries} index terms in chunks of ${indexChunkSize}...`);
+
+    // Use streaming approach for inverted index
+    const indexKeys = Array.from(this.invertedIndex.keys());
+
+    for (let i = 0; i < indexKeys.length; i += indexChunkSize) {
+      const chunk: [string, string[]][] = [];
+      const endIndex = Math.min(i + indexChunkSize, indexKeys.length);
+
+      // Process index entries in current chunk
+      for (let j = i; j < endIndex; j++) {
+        const term = indexKeys[j];
+        const docIds = this.invertedIndex.get(term);
+        if (docIds && docIds.size > 0) {
+          // Convert Set to Array only when needed
+          chunk.push([term, Array.from(docIds)]);
+          indexEntriesProcessed++;
+        }
+      }
+
+      if (chunk.length > 0) {
+        const indexFile = `${indexBasePath}.index.${indexChunkIndex.toString().padStart(5, '0')}${extension}`;
+
+        // Write and immediately clear chunk from memory
+        const jsonData = JSON.stringify(chunk, null, 2);
+        await this.writeFile(indexFile, jsonData);
+        indexChunkIndex++;
+
+        // Progress reporting every 20 chunks
+        if (indexChunkIndex % 20 === 0) {
+          console.log(
+            `Exported ${indexEntriesProcessed}/${totalIndexEntries} index terms (${Math.round((indexEntriesProcessed / totalIndexEntries) * 100)}%)`,
+          );
+
+          // Force garbage collection for large exports
+          if (global.gc) {
+            global.gc();
+          }
+        }
+      }
+
+      // Clear references immediately
+      chunk.length = 0;
     }
 
     // Create a manifest file listing all chunks
@@ -387,11 +471,30 @@ export class SearchIndex {
 
   /**
    * Helper method to write file with compression if enabled
+   * Uses streaming compression for large files to avoid memory issues
    */
   private async writeFile(filePath: string, data: string): Promise<void> {
     if (this.compress) {
-      const compressedData = zlib.gzipSync(data);
-      await fs.promises.writeFile(filePath, compressedData);
+      // For large data, use streaming compression to avoid memory allocation issues
+      if (data.length > 10 * 1024 * 1024) {
+        // 10MB threshold
+        return new Promise((resolve, reject) => {
+          const writeStream = fs.createWriteStream(filePath);
+          const gzipStream = zlib.createGzip();
+
+          writeStream.on('error', reject);
+          gzipStream.on('error', reject);
+          writeStream.on('finish', resolve);
+
+          gzipStream.pipe(writeStream);
+          gzipStream.write(data);
+          gzipStream.end();
+        });
+      } else {
+        // For smaller files, use sync compression
+        const compressedData = zlib.gzipSync(data);
+        await fs.promises.writeFile(filePath, compressedData);
+      }
     } else {
       await fs.promises.writeFile(filePath, data);
     }
