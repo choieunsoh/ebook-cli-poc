@@ -73,6 +73,9 @@ ebook update -v --max-files 200 --max-memory 16GB
 # Search the collection
 ebook search "query" -l 10 -f
 
+# View comprehensive index statistics
+ebook summary -v -k 20
+
 # Extract PDF cover images
 pdf-cover filename.pdf -o ./images
 ```
@@ -92,6 +95,15 @@ pdf-cover filename.pdf -o ./images
 - **SQLite database** integration for complex queries
 - **Timestamped backups** for version control
 - **Processing summaries** with statistics
+
+### Index Analytics
+
+- **Comprehensive statistics** with document and term counts
+- **Top K frequent terms** with coverage percentages
+- **Percentile analysis** (25th, 50th, 75th) for term frequency distribution
+- **Memory usage monitoring** and performance metrics
+- **Term frequency categorization** (singleton, rare, common, very common)
+- **Large dataset optimization** for millions of terms
 
 ### Metadata Extraction
 

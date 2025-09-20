@@ -20,6 +20,9 @@ ebook update -v
 
 # Search your collection
 ebook search "machine learning" -l 10
+
+# View index statistics
+ebook summary -v
 ```
 
 ## 📖 Overview
@@ -111,6 +114,24 @@ ebook search "machine learning" -f
 ebook search "programming" -l 5 -v
 ```
 
+### Viewing Index Statistics
+
+Get comprehensive statistics about your search index:
+
+```bash
+# Basic index summary
+ebook summary
+
+# Show top 20 most frequent terms
+ebook summary -k 20
+
+# Verbose output with detailed analysis
+ebook summary -v -k 15
+
+# Use custom index file
+ebook summary -i ./my-index.json -v
+```
+
 ### Extracting PDF Covers
 
 Extract cover images from PDF files:
@@ -199,6 +220,41 @@ Results for "machine learning":
    Word Count: 45,230
    Excerpt: Machine learning is the science of getting computers to learn...
    Path: H:\E-Books\AI\Machine Learning Yearning.pdf
+```
+
+### Index Statistics
+
+The `summary` command provides comprehensive analytics:
+
+- **Basic metrics**: Document count, term count, average document size
+- **Top K frequent terms** with percentages of document coverage
+- **Percentile analysis** (25th, 50th, 75th percentiles) of term frequencies
+- **Term distribution** across frequency ranges (singleton, rare, common, etc.)
+- **Memory usage** and performance metrics
+
+Example summary output:
+
+```
+📊 Search Index Summary
+==================================================
+
+📈 Basic Statistics:
+Total Documents: 1,200
+Total Unique Terms: 4,421,733
+Average Document Size: 12,463 tokens
+Index File Size: 499.92 MB
+
+📊 Term Frequency Distribution:
+25th Percentile: 1
+75th Percentile: 1
+
+🔝 Top 5 Most Frequent Terms:
+------------------------------------------------------------
+Rank | Term      | Frequency | Percentage
+------------------------------------------------------------
+   1 | not       |      1125 |     93.75%
+   2 | use       |      1121 |     93.42%
+   3 | new       |      1117 |     93.08%
 ```
 
 ## 🛡️ Error Handling

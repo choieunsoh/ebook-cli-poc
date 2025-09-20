@@ -390,6 +390,34 @@ export class EbookSearch {
   }
 
   /**
+   * Gets comprehensive index statistics including percentiles and term analysis
+   */
+  getIndexStatistics(topK: number = 10): {
+    totalDocuments: number;
+    totalTerms: number;
+    totalTokens: number;
+    averageDocumentSize: number;
+    averageTermFrequency: number;
+    averageTermFrequencyWithoutSingletons: number;
+    singletonTermsCount: number;
+    singletonTermsPercentage: number;
+    termFrequencies: number[];
+    percentiles: {
+      p25: number;
+      p50: number;
+      p75: number;
+    };
+    percentilesWithoutSingletons: {
+      p25: number;
+      p50: number;
+      p75: number;
+    };
+    topTermsWithPercentages: Array<{ term: string; frequency: number; percentage: number }>;
+  } {
+    return this.index.getIndexStatistics(topK);
+  }
+
+  /**
    * Clears the search index
    */
   clearIndex(): void {

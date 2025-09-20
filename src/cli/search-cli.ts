@@ -292,6 +292,193 @@ program
     }
   });
 
+program
+  .command('summary')
+  .description('Display search index statistics and analysis')
+  .option('-i, --index-file <path>', 'path to search index file', './search-index.json')
+  .option('-k, --top-k <number>', 'number of top frequent terms to display', '10')
+  .option('-v, --verbose', 'enable verbose output with detailed statistics')
+  .action(async (options) => {
+    const { indexFile, topK, verbose } = options;
+    const topKNumber = parseInt(topK, 10);
+
+    try {
+      const search = new EbookSearch(indexFile);
+
+      // Check if index exists
+      if (!search.indexExists()) {
+        console.error(`Error: Search index file not found: ${indexFile}`);
+        console.error('Please build the search index first using: ebook update');
+        process.exit(1);
+      }
+
+      if (verbose) {
+        console.log(`Loading search index from: ${indexFile}`);
+      }
+
+      // Load the index
+      await search.loadIndex();
+
+      // Get comprehensive statistics
+      const stats = search.getIndexStatistics(topKNumber);
+
+      // Display header
+      console.log('📊 Search Index Summary');
+      console.log('='.repeat(50));
+
+      // Basic statistics
+      console.log('\n📈 Basic Statistics:');
+      console.log(`Total Documents: ${stats.totalDocuments.toLocaleString()}`);
+      console.log(`Total Unique Terms: ${stats.totalTerms.toLocaleString()}`);
+      console.log(
+        `Singleton Terms: ${stats.singletonTermsCount.toLocaleString()} (${stats.singletonTermsPercentage}% of all terms)`,
+      );
+      console.log(`Total Tokens: ${stats.totalTokens.toLocaleString()}`);
+      console.log(`Average Document Size: ${stats.averageDocumentSize.toLocaleString()} tokens`);
+      console.log(`Average Term Frequency: ${stats.averageTermFrequency}`);
+      console.log(`Average Term Frequency (without Singletons): ${stats.averageTermFrequencyWithoutSingletons}`);
+
+      // Index file size
+      const indexStats = search.getStats();
+      console.log(`Index File Size: ${formatBytes(indexStats.indexSize)}`);
+
+      // Term frequency percentiles
+      console.log('\n📊 Term Frequency Distribution:');
+      console.log(`25th Percentile: ${stats.percentiles.p25}`);
+      console.log(`50th Percentile (Median): ${stats.percentiles.p50}`);
+      console.log(`75th Percentile: ${stats.percentiles.p75}`);
+
+      // Term frequency percentiles without singletons
+      console.log('\n📊 Term Frequency Distribution (without Singleton terms):');
+      console.log(`25th Percentile: ${stats.percentilesWithoutSingletons.p25}`);
+      console.log(`50th Percentile (Median): ${stats.percentilesWithoutSingletons.p50}`);
+      console.log(`75th Percentile: ${stats.percentilesWithoutSingletons.p75}`);
+
+      // Top K terms
+      console.log(`\n🔝 Top ${Math.min(topKNumber, stats.topTermsWithPercentages.length)} Most Frequent Terms:`);
+      console.log('-'.repeat(60));
+      console.log('Rank | Term                    | Frequency | Percentage');
+      console.log('-'.repeat(60));
+
+      stats.topTermsWithPercentages
+        .slice(0, topKNumber)
+        .forEach((term: { term: string; frequency: number; percentage: number }, index: number) => {
+          const rank = (index + 1).toString().padStart(4, ' ');
+          const termName = term.term.padEnd(23, ' ');
+          const frequency = term.frequency.toString().padStart(9, ' ');
+          const percentage = `${term.percentage}%`.padStart(10, ' ');
+          console.log(`${rank} | ${termName} | ${frequency} | ${percentage}`);
+        });
+
+      // Verbose statistics
+      if (verbose) {
+        console.log('\n📋 Detailed Statistics:');
+
+        // Term frequency distribution - optimized for large datasets
+        const frequencies = stats.termFrequencies;
+
+        // For very large datasets, use streaming calculations to avoid memory issues
+        if (frequencies.length > 1000000) {
+          console.log(
+            `⚠️  Large dataset detected (${frequencies.length.toLocaleString()} terms). Using optimized calculations.`,
+          );
+
+          // Calculate min/max/avg using streaming approach
+          let minFreq = Infinity;
+          let maxFreq = -Infinity;
+          let sum = 0;
+
+          for (const freq of frequencies) {
+            if (freq < minFreq) minFreq = freq;
+            if (freq > maxFreq) maxFreq = freq;
+            sum += freq;
+          }
+
+          const avgFreq = frequencies.length > 0 ? Math.round((sum / frequencies.length) * 100) / 100 : 0;
+
+          console.log(`Minimum Term Frequency: ${minFreq}`);
+          console.log(`Maximum Term Frequency: ${maxFreq}`);
+          console.log(`Average Term Frequency: ${avgFreq}`);
+          console.log(`Average Term Frequency (without Singletons): ${stats.averageTermFrequencyWithoutSingletons}`);
+
+          // Use counter-based approach for frequency ranges
+          const ranges = [
+            { min: 1, max: 1, label: 'Singleton terms (frequency = 1)', count: 0 },
+            { min: 2, max: 5, label: 'Rare terms (frequency 2-5)', count: 0 },
+            { min: 6, max: 10, label: 'Uncommon terms (frequency 6-10)', count: 0 },
+            { min: 11, max: 50, label: 'Common terms (frequency 11-50)', count: 0 },
+            { min: 51, max: 99, label: 'Frequent terms (frequency 51-99)', count: 0 },
+            { min: 100, max: 499, label: 'Very frequent terms (frequency 100-499)', count: 0 },
+            { min: 500, max: 999, label: 'Highly frequent terms (frequency 500-999)', count: 0 },
+            { min: 1000, max: Infinity, label: 'Extremely frequent terms (frequency ≥ 1000)', count: 0 },
+          ];
+
+          // Count frequencies in ranges
+          for (const freq of frequencies) {
+            for (const range of ranges) {
+              if (freq >= range.min && freq <= range.max) {
+                range.count++;
+                break;
+              }
+            }
+          }
+
+          console.log('\nTerm Frequency Distribution:');
+          ranges.forEach((range) => {
+            const percentage =
+              frequencies.length > 0 ? Math.round((range.count / frequencies.length) * 10000) / 100 : 0;
+            console.log(`  ${range.label}: ${range.count.toLocaleString()} (${percentage}%)`);
+          });
+        } else {
+          // Standard calculation for smaller datasets
+          const minFreq = Math.min(...frequencies);
+          const maxFreq = Math.max(...frequencies);
+          const avgFreq =
+            frequencies.length > 0
+              ? Math.round((frequencies.reduce((sum: number, f: number) => sum + f, 0) / frequencies.length) * 100) /
+                100
+              : 0;
+
+          console.log(`Minimum Term Frequency: ${minFreq}`);
+          console.log(`Maximum Term Frequency: ${maxFreq}`);
+          console.log(`Average Term Frequency: ${avgFreq}`);
+          console.log(`Average Term Frequency (without Singletons): ${stats.averageTermFrequencyWithoutSingletons}`);
+
+          // Frequency distribution ranges
+          const ranges = [
+            { min: 1, max: 1, label: 'Singleton terms (frequency = 1)' },
+            { min: 2, max: 5, label: 'Rare terms (frequency 2-5)' },
+            { min: 6, max: 10, label: 'Uncommon terms (frequency 6-10)' },
+            { min: 11, max: 50, label: 'Common terms (frequency 11-50)' },
+            { min: 51, max: 99, label: 'Frequent terms (frequency 51-99)' },
+            { min: 100, max: 499, label: 'Very frequent terms (frequency 100-499)' },
+            { min: 500, max: 999, label: 'Highly frequent terms (frequency 500-999)' },
+            { min: 1000, max: Infinity, label: 'Extremely frequent terms (frequency ≥ 1000)' },
+          ];
+
+          console.log('\nTerm Frequency Distribution:');
+          ranges.forEach((range) => {
+            const count = frequencies.filter((f: number) => f >= range.min && f <= range.max).length;
+            const percentage = frequencies.length > 0 ? Math.round((count / frequencies.length) * 10000) / 100 : 0;
+            console.log(`  ${range.label}: ${count.toLocaleString()} (${percentage}%)`);
+          });
+        }
+
+        // Memory and performance info
+        const memoryUsage = process.memoryUsage();
+        console.log('\n💾 Memory Usage:');
+        console.log(`Heap Used: ${formatBytes(memoryUsage.heapUsed)}`);
+        console.log(`Heap Total: ${formatBytes(memoryUsage.heapTotal)}`);
+        console.log(`External: ${formatBytes(memoryUsage.external)}`);
+      }
+
+      console.log('\n✅ Index summary completed successfully!');
+    } catch (error) {
+      console.error('Failed to generate index summary:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
 program.parse();
 
 if (!program.args.length) {

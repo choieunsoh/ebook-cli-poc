@@ -421,4 +421,139 @@ export class SearchIndex {
 
     return termFrequencies.slice(0, limit);
   }
+
+  /**
+   * Gets comprehensive index statistics including percentiles
+   */
+  getIndexStatistics(topK: number = 10): {
+    totalDocuments: number;
+    totalTerms: number;
+    totalTokens: number;
+    averageDocumentSize: number;
+    averageTermFrequency: number;
+    averageTermFrequencyWithoutSingletons: number;
+    singletonTermsCount: number;
+    singletonTermsPercentage: number;
+    termFrequencies: number[];
+    percentiles: {
+      p25: number;
+      p50: number;
+      p75: number;
+    };
+    percentilesWithoutSingletons: {
+      p25: number;
+      p50: number;
+      p75: number;
+    };
+    topTermsWithPercentages: Array<{ term: string; frequency: number; percentage: number }>;
+  } {
+    const totalDocuments = this.documents.size;
+    const totalTerms = this.invertedIndex.size;
+
+    // Calculate total tokens across all documents
+    let totalTokens = 0;
+    for (const doc of this.documents.values()) {
+      totalTokens += doc.tokenCount || 0;
+    }
+
+    const averageDocumentSize = totalDocuments > 0 ? Math.round(totalTokens / totalDocuments) : 0;
+
+    // Get all term frequencies
+    const termFrequencies: number[] = [];
+    for (const docIds of this.invertedIndex.values()) {
+      termFrequencies.push(docIds.size);
+    }
+
+    // Calculate average term frequency
+    const averageTermFrequency =
+      termFrequencies.length > 0
+        ? Math.round((termFrequencies.reduce((sum, freq) => sum + freq, 0) / termFrequencies.length) * 100) / 100
+        : 0;
+
+    // Calculate singleton terms statistics
+    const singletonTermsCount = termFrequencies.filter((freq) => freq === 1).length;
+    const singletonTermsPercentage = totalTerms > 0 ? Math.round((singletonTermsCount / totalTerms) * 10000) / 100 : 0;
+
+    // Calculate average term frequency without singleton terms (frequency = 1)
+    const nonSingletonFrequencies = termFrequencies.filter((freq) => freq > 1);
+    const averageTermFrequencyWithoutSingletons =
+      nonSingletonFrequencies.length > 0
+        ? Math.round(
+            (nonSingletonFrequencies.reduce((sum, freq) => sum + freq, 0) / nonSingletonFrequencies.length) * 100,
+          ) / 100
+        : 0;
+
+    // Sort frequencies for percentile calculation
+    termFrequencies.sort((a, b) => a - b);
+    const nonSingletonFrequenciesSorted = nonSingletonFrequencies.sort((a, b) => a - b);
+
+    // Calculate percentiles (including singletons)
+    const percentiles = this.calculatePercentiles(termFrequencies);
+
+    // Calculate percentiles without singletons
+    const percentilesWithoutSingletons = this.calculatePercentiles(nonSingletonFrequenciesSorted);
+
+    // Get top terms with percentages
+    const topTerms = this.getTopFrequentTerms(topK);
+    const topTermsWithPercentages = topTerms.map((term) => ({
+      ...term,
+      percentage: totalDocuments > 0 ? Math.round((term.frequency / totalDocuments) * 10000) / 100 : 0,
+    }));
+
+    return {
+      totalDocuments,
+      totalTerms,
+      totalTokens,
+      averageDocumentSize,
+      averageTermFrequency,
+      averageTermFrequencyWithoutSingletons,
+      singletonTermsCount,
+      singletonTermsPercentage,
+      termFrequencies,
+      percentiles,
+      percentilesWithoutSingletons,
+      topTermsWithPercentages,
+    };
+  }
+
+  /**
+   * Calculates 25th, 50th, and 75th percentiles from sorted array
+   */
+  private calculatePercentiles(sortedArray: number[]): { p25: number; p50: number; p75: number } {
+    if (sortedArray.length === 0) {
+      return { p25: 0, p50: 0, p75: 0 };
+    }
+
+    const n = sortedArray.length;
+
+    // Calculate percentile positions
+    const p25Position = (n - 1) * 0.25;
+    const p50Position = (n - 1) * 0.5;
+    const p75Position = (n - 1) * 0.75;
+
+    // Interpolate values at percentile positions
+    const p25 = this.interpolatePercentile(sortedArray, p25Position);
+    const p50 = this.interpolatePercentile(sortedArray, p50Position);
+    const p75 = this.interpolatePercentile(sortedArray, p75Position);
+
+    return { p25, p50, p75 };
+  }
+
+  /**
+   * Interpolates value at a given position in sorted array
+   */
+  private interpolatePercentile(sortedArray: number[], position: number): number {
+    const lowerIndex = Math.floor(position);
+    const upperIndex = Math.ceil(position);
+
+    if (lowerIndex === upperIndex) {
+      return sortedArray[lowerIndex];
+    }
+
+    const lowerValue = sortedArray[lowerIndex];
+    const upperValue = sortedArray[upperIndex];
+    const fraction = position - lowerIndex;
+
+    return Math.round((lowerValue + (upperValue - lowerValue) * fraction) * 100) / 100;
+  }
 }
