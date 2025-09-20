@@ -270,8 +270,26 @@ export class SearchIndex {
 
   /**
    * Exports the index to a file (optionally compressed)
+   * Falls back to split-file approach for very large indexes
    */
   async exportToFile(filePath: string): Promise<void> {
+    try {
+      // Try standard single-file export first
+      await this.exportToSingleFile(filePath);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Invalid string length')) {
+        console.log('Index too large for single file, using split-file approach...');
+        await this.exportToSplitFiles(filePath);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Exports the index to a single file (original method)
+   */
+  private async exportToSingleFile(filePath: string): Promise<void> {
     const data: IndexData = {
       metadata: this.metadata || undefined,
       documents: Array.from(this.documents.values()),
@@ -289,13 +307,111 @@ export class SearchIndex {
   }
 
   /**
-   * Imports the index from a file (handles both compressed and uncompressed)
+   * Exports the index to multiple split files to handle very large indexes
    */
-  async importFromFile(filePath: string): Promise<void> {
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`Index file not found: ${filePath}`);
+  private async exportToSplitFiles(filePath: string): Promise<void> {
+    const basePath = filePath.replace(/\.[^/.]+$/, ''); // Remove extension
+    const extension = filePath.match(/\.[^/.]+$/)?.[0] || '.json';
+
+    // Create search-indexes directory
+    const indexDir = 'search-indexes';
+    if (!fs.existsSync(indexDir)) {
+      await fs.promises.mkdir(indexDir, { recursive: true });
     }
 
+    const baseFileName = basePath.split('/').pop() || basePath.split('\\').pop() || 'search-index';
+    const indexBasePath = `${indexDir}/${baseFileName}`;
+
+    // Export metadata
+    const metadataFile = `${indexBasePath}.metadata${extension}`;
+    const metadataData = {
+      metadata: this.metadata || undefined,
+      documentCount: this.documents.size,
+      invertedIndexSize: this.invertedIndex.size,
+      splitFiles: true,
+    };
+    await this.writeFile(metadataFile, JSON.stringify(metadataData, null, 2));
+
+    // Export documents in chunks
+    const documents = Array.from(this.documents.values());
+    const docChunkSize = 1000; // Adjust based on memory constraints
+    let docChunkIndex = 0;
+
+    for (let i = 0; i < documents.length; i += docChunkSize) {
+      const chunk = documents.slice(i, i + docChunkSize);
+      const docFile = `${indexBasePath}.docs.${docChunkIndex.toString().padStart(5, '0')}${extension}`;
+      await this.writeFile(docFile, JSON.stringify(chunk, null, 2));
+      docChunkIndex++;
+    }
+
+    // Export inverted index in chunks
+    const invertedIndexEntries = Array.from(this.invertedIndex.entries());
+    const indexChunkSize = 10000; // Adjust based on memory constraints
+    let indexChunkIndex = 0;
+
+    for (let i = 0; i < invertedIndexEntries.length; i += indexChunkSize) {
+      const chunk = invertedIndexEntries
+        .slice(i, i + indexChunkSize)
+        .map(([term, docIds]) => [term, Array.from(docIds)]);
+      const indexFile = `${indexBasePath}.index.${indexChunkIndex.toString().padStart(5, '0')}${extension}`;
+      await this.writeFile(indexFile, JSON.stringify(chunk, null, 2));
+      indexChunkIndex++;
+    }
+
+    // Create a manifest file listing all chunks
+    const manifestFile = `${indexBasePath}.manifest${extension}`;
+    const manifest = {
+      type: 'split-index',
+      metadataFile: `${baseFileName}.metadata${extension}`,
+      documentChunks: docChunkIndex,
+      indexChunks: indexChunkIndex,
+      totalDocuments: this.documents.size,
+      totalTerms: this.invertedIndex.size,
+      indexDirectory: indexDir,
+    };
+    await this.writeFile(manifestFile, JSON.stringify(manifest, null, 2));
+
+    console.log(`Index exported as ${indexChunkIndex + docChunkIndex + 2} split files in ${indexDir}/`);
+  }
+
+  /**
+   * Helper method to write file with compression if enabled
+   */
+  private async writeFile(filePath: string, data: string): Promise<void> {
+    if (this.compress) {
+      const compressedData = zlib.gzipSync(data);
+      await fs.promises.writeFile(filePath, compressedData);
+    } else {
+      await fs.promises.writeFile(filePath, data);
+    }
+  }
+
+  /**
+   * Imports the index from a file (handles both single files and split files)
+   */
+  async importFromFile(filePath: string): Promise<void> {
+    // Check if this is a split file system by looking for manifest in search-indexes directory
+    const basePath = filePath.replace(/\.[^/.]+$/, '');
+    const extension = filePath.match(/\.[^/.]+$/)?.[0] || '.json';
+
+    const baseFileName = basePath.split('/').pop() || basePath.split('\\').pop() || 'search-index';
+    const indexDir = 'search-indexes';
+    const indexBasePath = `${indexDir}/${baseFileName}`;
+    const manifestFile = `${indexBasePath}.manifest${extension}`;
+
+    if (fs.existsSync(manifestFile)) {
+      await this.importFromSplitFiles(indexBasePath, extension);
+    } else if (fs.existsSync(filePath)) {
+      await this.importFromSingleFile(filePath);
+    } else {
+      throw new Error(`Index file not found: ${filePath}`);
+    }
+  }
+
+  /**
+   * Imports the index from a single file (original method)
+   */
+  private async importFromSingleFile(filePath: string): Promise<void> {
     const fileData = await fs.promises.readFile(filePath);
     let jsonData: string;
 
@@ -322,6 +438,65 @@ export class SearchIndex {
     // Rebuild inverted index
     for (const [term, docIds] of data.invertedIndex) {
       this.invertedIndex.set(term, new Set(docIds));
+    }
+  }
+
+  /**
+   * Imports the index from split files
+   */
+  private async importFromSplitFiles(basePath: string, extension: string): Promise<void> {
+    const manifestFile = `${basePath}.manifest${extension}`;
+    const manifestData = await this.readFile(manifestFile);
+    const manifest = JSON.parse(manifestData);
+
+    // Clear existing data
+    this.documents.clear();
+    this.invertedIndex.clear();
+
+    // Load metadata
+    const metadataFile = `${basePath}.metadata${extension}`;
+    const metadataData = await this.readFile(metadataFile);
+    const metadata = JSON.parse(metadataData);
+    this.metadata = metadata.metadata || null;
+
+    console.log(`Loading split index: ${manifest.totalDocuments} documents, ${manifest.totalTerms} terms`);
+
+    // Load document chunks with zero-padded file names
+    for (let i = 0; i < manifest.documentChunks; i++) {
+      const docFile = `${basePath}.docs.${i.toString().padStart(5, '0')}${extension}`;
+      const docData = await this.readFile(docFile);
+      const docs: SearchDocument[] = JSON.parse(docData);
+
+      for (const doc of docs) {
+        this.documents.set(doc.id, doc);
+      }
+    }
+
+    // Load inverted index chunks with zero-padded file names
+    for (let i = 0; i < manifest.indexChunks; i++) {
+      const indexFile = `${basePath}.index.${i.toString().padStart(5, '0')}${extension}`;
+      const indexData = await this.readFile(indexFile);
+      const indexEntries: [string, string[]][] = JSON.parse(indexData);
+
+      for (const [term, docIds] of indexEntries) {
+        this.invertedIndex.set(term, new Set(docIds));
+      }
+    }
+
+    console.log(`Loaded ${this.documents.size} documents and ${this.invertedIndex.size} terms from split files`);
+  }
+
+  /**
+   * Helper method to read file with decompression if needed
+   */
+  private async readFile(filePath: string): Promise<string> {
+    const fileData = await fs.promises.readFile(filePath);
+
+    // Try to decompress, if it fails assume it's uncompressed
+    try {
+      return zlib.gunzipSync(fileData).toString('utf-8');
+    } catch {
+      return fileData.toString('utf-8');
     }
   }
 

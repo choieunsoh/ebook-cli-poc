@@ -358,16 +358,30 @@ export class EbookSearch {
    * Loads the search index from disk
    */
   async loadIndex(): Promise<void> {
-    if (fs.existsSync(this.indexFilePath)) {
+    // Always try to import - importFromFile handles both single file and split file detection
+    if (this.indexExists()) {
       await this.index.importFromFile(this.indexFilePath);
     }
   }
 
   /**
-   * Checks if index file exists
+   * Checks if index file exists (supports both single file and split file formats)
    */
   indexExists(): boolean {
-    return fs.existsSync(this.indexFilePath);
+    // Check for single file
+    if (fs.existsSync(this.indexFilePath)) {
+      return true;
+    }
+
+    // Check for split file format (manifest file) in search-indexes directory
+    const basePath = this.indexFilePath.replace(/\.[^/.]+$/, '');
+    const extension = this.indexFilePath.match(/\.[^/.]+$/)?.[0] || '.json';
+
+    const baseFileName = basePath.split('/').pop() || basePath.split('\\').pop() || 'search-index';
+    const indexDir = 'search-indexes';
+    const manifestFile = `${indexDir}/${baseFileName}.manifest${extension}`;
+
+    return fs.existsSync(manifestFile);
   }
 
   /**
@@ -418,16 +432,60 @@ export class EbookSearch {
   }
 
   /**
-   * Clears the search index
+   * Clears the search index (supports both single file and split file formats)
    */
   clearIndex(): void {
     this.index.clear();
+
+    // Remove single file if it exists
     if (fs.existsSync(this.indexFilePath)) {
       fs.unlinkSync(this.indexFilePath);
     }
-  }
 
-  /**
+    // Remove split files if they exist in search-indexes directory
+    const basePath = this.indexFilePath.replace(/\.[^/.]+$/, '');
+    const extension = this.indexFilePath.match(/\.[^/.]+$/)?.[0] || '.json';
+
+    const baseFileName = basePath.split('/').pop() || basePath.split('\\').pop() || 'search-index';
+    const indexDir = 'search-indexes';
+    const indexBasePath = `${indexDir}/${baseFileName}`;
+    const manifestFile = `${indexBasePath}.manifest${extension}`;
+
+    if (fs.existsSync(manifestFile)) {
+      try {
+        // Read manifest to get list of files to delete
+        const manifestData = fs.readFileSync(manifestFile, 'utf-8');
+        const manifest = JSON.parse(manifestData);
+
+        // Delete all split files with zero-padded names
+        fs.unlinkSync(manifestFile);
+        fs.unlinkSync(`${indexBasePath}.metadata${extension}`);
+
+        for (let i = 0; i < manifest.documentChunks; i++) {
+          const docFile = `${indexBasePath}.docs.${i.toString().padStart(5, '0')}${extension}`;
+          if (fs.existsSync(docFile)) {
+            fs.unlinkSync(docFile);
+          }
+        }
+
+        for (let i = 0; i < manifest.indexChunks; i++) {
+          const indexFile = `${indexBasePath}.index.${i.toString().padStart(5, '0')}${extension}`;
+          if (fs.existsSync(indexFile)) {
+            fs.unlinkSync(indexFile);
+          }
+        }
+
+        // Try to remove the search-indexes directory if it's empty
+        try {
+          fs.rmdirSync(indexDir);
+        } catch {
+          // Directory not empty or other error, ignore
+        }
+      } catch (error) {
+        console.warn('Warning: Could not clean up all split index files:', error);
+      }
+    }
+  } /**
    * Generates a unique document ID from file path
    */
   private generateDocumentId(filePath: string): string {
