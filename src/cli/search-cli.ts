@@ -9,7 +9,8 @@ import { EbookSearch } from '../search';
 
 /**
  * Check if the Node.js process has enough heap space for the given memory requirement
- * If not, restart the process with increased heap size
+ * If not, restart the process with increased heap size and exit the current process
+ * @throws {ProcessRestartError} When process restart is initiated
  */
 function ensureHeapSize(requiredMemoryMB: number): void {
   // Check if we're already in a restarted process (avoid infinite restart loop)
@@ -43,8 +44,9 @@ function ensureHeapSize(requiredMemoryMB: number): void {
       process.exit(1);
     });
 
-    // Don't exit immediately - let the child process run and handle exit via the 'exit' event
-    return;
+    // Throw a special error to stop execution in the current call stack
+    // This prevents the original process from continuing while the child runs
+    throw new Error('PROCESS_RESTARTED');
   }
 }
 
@@ -175,7 +177,15 @@ program
       const memoryLimitMB = parseMemoryValue(maxMemory);
 
       // Ensure Node.js has enough heap space for the specified memory limit
-      ensureHeapSize(memoryLimitMB);
+      try {
+        ensureHeapSize(memoryLimitMB);
+      } catch (error) {
+        if (error instanceof Error && error.message === 'PROCESS_RESTARTED') {
+          // Process is being restarted, stop execution in this process
+          return;
+        }
+        throw error;
+      }
       if (verbose) {
         console.log(`Updating search index incrementally`);
         console.log(`Index file: ${indexFile}`);

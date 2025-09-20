@@ -6,6 +6,45 @@ import * as fs from 'fs';
 import * as zlib from 'zlib';
 import { tokenizeForIndexing, tokenizeMetadataForIndexing } from './tokenizer';
 
+/**
+ * Utility function to create and display a progress bar in terminal
+ */
+function createProgressBar(current: number, total: number, label: string, barWidth: number = 40): string {
+  const percentage = Math.round((current / total) * 100);
+  const filled = Math.round((current / total) * barWidth);
+  const empty = barWidth - filled;
+
+  const bar = '█'.repeat(filled) + '░'.repeat(empty);
+  const progress = `${current.toLocaleString()}/${total.toLocaleString()}`;
+
+  return `${label}: [${bar}] ${percentage}% (${progress})`;
+}
+
+/**
+ * Progress tracking state to avoid console output collision
+ */
+let lastProgressOutput = '';
+
+/**
+ * Utility function to update progress in place (overwrite current line)
+ */
+function updateProgress(current: number, total: number, label: string): void {
+  const progressBar = createProgressBar(current, total, label);
+
+  // Only update if progress has changed significantly to avoid flickering
+  if (progressBar !== lastProgressOutput) {
+    // Clear the current line and write the progress bar
+    process.stdout.write(`\r\x1b[K${progressBar}`); // \x1b[K clears from cursor to end of line
+    lastProgressOutput = progressBar;
+  }
+
+  // Add newline when complete and reset state
+  if (current >= total) {
+    process.stdout.write('\n');
+    lastProgressOutput = '';
+  }
+}
+
 export interface SearchDocument {
   id: string;
   title?: string;
@@ -349,6 +388,8 @@ export class SearchIndex {
     let documentsProcessed = 0;
     const totalDocuments = this.documents.size;
 
+    // Ensure clean line before starting progress
+    process.stdout.write('\n');
     console.log(`Exporting ${totalDocuments} documents in chunks of ${docChunkSize}...`);
 
     // Use streaming approach instead of iterators to avoid memory buildup
@@ -385,14 +426,19 @@ export class SearchIndex {
         await this.writeFile(docFile, jsonData);
         docChunkIndex++;
 
-        // Progress reporting every 20 chunks
-        if (docChunkIndex % 20 === 0) {
-          console.log(
-            `Exported ${documentsProcessed}/${totalDocuments} documents (${Math.round((documentsProcessed / totalDocuments) * 100)}%)`,
-          );
+        // Progress reporting with progress bar - update every 20 chunks or when 10% progress changes, or when complete
+        const progressPercentage = Math.floor((documentsProcessed / totalDocuments) * 10) * 10; // Round to nearest 10%
+        const lastProgressPercentage = Math.floor(((documentsProcessed - chunk.length) / totalDocuments) * 10) * 10;
+
+        if (
+          docChunkIndex % 20 === 0 ||
+          progressPercentage > lastProgressPercentage ||
+          documentsProcessed >= totalDocuments
+        ) {
+          updateProgress(documentsProcessed, totalDocuments, 'Exporting documents');
 
           // Force garbage collection for large exports
-          if (global.gc) {
+          if (global.gc && docChunkIndex % 20 === 0) {
             global.gc();
           }
         }
@@ -408,6 +454,8 @@ export class SearchIndex {
     let indexEntriesProcessed = 0;
     const totalIndexEntries = this.invertedIndex.size;
 
+    // Small delay to ensure clean separation from document export
+    await new Promise((resolve) => setTimeout(resolve, 100));
     console.log(`Exporting ${totalIndexEntries} index terms in chunks of ${indexChunkSize}...`);
 
     // Use streaming approach for inverted index
@@ -436,14 +484,20 @@ export class SearchIndex {
         await this.writeFile(indexFile, jsonData);
         indexChunkIndex++;
 
-        // Progress reporting every 20 chunks
-        if (indexChunkIndex % 20 === 0) {
-          console.log(
-            `Exported ${indexEntriesProcessed}/${totalIndexEntries} index terms (${Math.round((indexEntriesProcessed / totalIndexEntries) * 100)}%)`,
-          );
+        // Progress reporting with progress bar - update every 100 chunks or when 10% progress changes, or when complete
+        const progressPercentage = Math.floor((indexEntriesProcessed / totalIndexEntries) * 10) * 10; // Round to nearest 10%
+        const lastProgressPercentage =
+          Math.floor(((indexEntriesProcessed - chunk.length) / totalIndexEntries) * 10) * 10;
+
+        if (
+          indexChunkIndex % 100 === 0 ||
+          progressPercentage > lastProgressPercentage ||
+          indexEntriesProcessed >= totalIndexEntries
+        ) {
+          updateProgress(indexEntriesProcessed, totalIndexEntries, 'Exporting index terms');
 
           // Force garbage collection for large exports
-          if (global.gc) {
+          if (global.gc && indexChunkIndex % 20 === 0) {
             global.gc();
           }
         }
@@ -466,6 +520,8 @@ export class SearchIndex {
     };
     await this.writeFile(manifestFile, JSON.stringify(manifest, null, 2));
 
+    // Small delay to ensure progress bars don't interfere with final output
+    await new Promise((resolve) => setTimeout(resolve, 50));
     console.log(`Index exported as ${indexChunkIndex + docChunkIndex + 2} split files in ${indexDir}/`);
   }
 
