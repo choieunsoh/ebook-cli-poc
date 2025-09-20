@@ -1,0 +1,44 @@
+{
+  "includes": ["/path/to/your/ebook/directory"],
+  "excludes": [
+    "/path/to/your/ebook/directory/backup",
+    "/path/to/your/ebook/directory/duplicates",
+    "/path/to/your/ebook/directory/excludes"
+  ],
+  "backupDir": "/path/to/your/ebook/directory/backup",
+  "duplicateDir": "/path/to/your/ebook/directory/duplicates",
+  "outputDir": "output",
+  "output": "books.json",
+  "dataFile": "data.json",
+  "timestampFormat": "YYYY-MM-DD_HH-mm-ss",
+  "filenameReplacements": [
+    "z libray",
+    "z.libray",
+    "z-libray",
+    "zlibrary",
+    "libgen li",
+    "libgen.li",
+    "libgen-li",
+    "libgenli",
+    "libgen"
+  ],
+  "tokenization": {
+    "enabled": true,
+    "mode": "bert",
+    "minTokenLength": 2,
+    "maxTokenLength": 50,
+    "removeStopwords": true,
+    "useStemming": true,
+    "customStopwords": [],
+    "fieldsToTokenize": ["filename"],
+    "bert": {
+      "enabled": true,
+      "model": "Xenova/bert-base-uncased",
+      "cacheModels": true,
+      "fallbackToBasic": true
+    }
+  },
+  "index": {
+    "compress": false
+  }
+}
