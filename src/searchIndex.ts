@@ -462,28 +462,64 @@ export class SearchIndex {
     console.log(`Loading split index: ${manifest.totalDocuments} documents, ${manifest.totalTerms} terms`);
 
     // Load document chunks with zero-padded file names
+    let skippedCorruptedDocFiles = 0;
     for (let i = 0; i < manifest.documentChunks; i++) {
       const docFile = `${basePath}.docs.${i.toString().padStart(5, '0')}${extension}`;
-      const docData = await this.readFile(docFile);
-      const docs: SearchDocument[] = JSON.parse(docData);
+      try {
+        const docData = await this.readFile(docFile);
 
-      for (const doc of docs) {
-        this.documents.set(doc.id, doc);
+        // Skip empty files
+        if (!docData.trim()) {
+          console.warn(`Warning: Skipping empty document file: ${docFile}`);
+          skippedCorruptedDocFiles++;
+          continue;
+        }
+
+        const docs: SearchDocument[] = JSON.parse(docData);
+
+        for (const doc of docs) {
+          this.documents.set(doc.id, doc);
+        }
+      } catch (error) {
+        console.warn(`Warning: Skipping corrupted document file ${docFile}: ${(error as Error).message}`);
+        skippedCorruptedDocFiles++;
+        continue;
       }
     }
 
     // Load inverted index chunks with zero-padded file names
+    let skippedCorruptedFiles = 0;
     for (let i = 0; i < manifest.indexChunks; i++) {
       const indexFile = `${basePath}.index.${i.toString().padStart(5, '0')}${extension}`;
-      const indexData = await this.readFile(indexFile);
-      const indexEntries: [string, string[]][] = JSON.parse(indexData);
+      try {
+        const indexData = await this.readFile(indexFile);
 
-      for (const [term, docIds] of indexEntries) {
-        this.invertedIndex.set(term, new Set(docIds));
+        // Skip empty files
+        if (!indexData.trim()) {
+          console.warn(`Warning: Skipping empty index file: ${indexFile}`);
+          skippedCorruptedFiles++;
+          continue;
+        }
+
+        const indexEntries: [string, string[]][] = JSON.parse(indexData);
+
+        for (const [term, docIds] of indexEntries) {
+          this.invertedIndex.set(term, new Set(docIds));
+        }
+      } catch (error) {
+        console.warn(`Warning: Skipping corrupted index file ${indexFile}: ${(error as Error).message}`);
+        skippedCorruptedFiles++;
+        continue;
       }
     }
 
     console.log(`Loaded ${this.documents.size} documents and ${this.invertedIndex.size} terms from split files`);
+    if (skippedCorruptedDocFiles > 0) {
+      console.warn(`Warning: Skipped ${skippedCorruptedDocFiles} corrupted document files`);
+    }
+    if (skippedCorruptedFiles > 0) {
+      console.warn(`Warning: Skipped ${skippedCorruptedFiles} corrupted index files`);
+    }
   }
 
   /**

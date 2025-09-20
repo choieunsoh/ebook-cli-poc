@@ -271,10 +271,12 @@ The tool includes robust error handling:
 
 ### Memory Management
 
-- Default memory limit: 4GB
-- Configurable up to 16GB+
-- Automatic memory monitoring
-- Batch processing for large collections
+- **Dynamic heap sizing**: Automatically sets Node.js heap size based on `--max-memory` parameter
+- **Streaming batch processing**: Processes and discards batches immediately to prevent memory accumulation
+- **Real-time memory monitoring**: Tracks heap, external, and RSS memory usage during processing
+- **Proactive garbage collection**: Forces garbage collection between batches to free memory
+- **Configurable limits**: Default 4GB, configurable up to 32GB+ with proper system memory
+- **Memory threshold warnings**: Alerts when approaching memory limits
 
 ### Processing Speed
 

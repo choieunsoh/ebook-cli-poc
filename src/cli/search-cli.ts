@@ -1,9 +1,52 @@
 #!/usr/bin/env node
 
+import { spawn } from 'child_process';
 import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as v8 from 'v8';
 import { EbookSearch } from '../search';
+
+/**
+ * Check if the Node.js process has enough heap space for the given memory requirement
+ * If not, restart the process with increased heap size
+ */
+function ensureHeapSize(requiredMemoryMB: number): void {
+  // Check if we're already in a restarted process (avoid infinite restart loop)
+  if (process.env.HEAP_SIZE_RESTARTED) {
+    return;
+  }
+
+  const heapStats = v8.getHeapStatistics();
+  const currentHeapLimitMB = Math.round(heapStats.heap_size_limit / 1024 / 1024);
+
+  // Add 20% buffer to the required memory
+  const targetHeapSizeMB = Math.max(requiredMemoryMB * 1.2, 4096); // Minimum 4GB
+
+  if (currentHeapLimitMB < targetHeapSizeMB) {
+    console.log(`Current heap limit: ${currentHeapLimitMB}MB, required: ${targetHeapSizeMB}MB`);
+    console.log(`Restarting with increased heap size...`);
+
+    // Restart the process with increased heap size
+    const nodeArgs = [`--max-old-space-size=${Math.round(targetHeapSizeMB)}`, ...process.argv.slice(1)];
+    const child = spawn(process.execPath, nodeArgs, {
+      stdio: 'inherit',
+      env: { ...process.env, HEAP_SIZE_RESTARTED: 'true' },
+    });
+
+    child.on('exit', (code) => {
+      process.exit(code || 0);
+    });
+
+    child.on('error', (error) => {
+      console.error('Failed to restart process with increased heap size:', error.message);
+      process.exit(1);
+    });
+
+    // Don't exit immediately - let the child process run and handle exit via the 'exit' event
+    return;
+  }
+}
 
 const program = new Command();
 
@@ -129,18 +172,20 @@ program
 
     try {
       const batchEnabled = batch && !noBatch;
+      const memoryLimitMB = parseMemoryValue(maxMemory);
 
+      // Ensure Node.js has enough heap space for the specified memory limit
+      ensureHeapSize(memoryLimitMB);
       if (verbose) {
         console.log(`Updating search index incrementally`);
         console.log(`Index file: ${indexFile}`);
         console.log(`Data file: ${dataFile || 'auto-detect from config.json'}`);
         console.log(`Force full rebuild: ${force ? 'yes' : 'no'}`);
         console.log(`Max file size: ${maxFileSize}MB`);
-        console.log(`Max memory usage: ${maxMemory} (${parseMemoryValue(maxMemory)}MB)`);
+        console.log(`Max memory usage: ${maxMemory} (${memoryLimitMB}MB)`);
         console.log(`Skip large files: ${!noSkipLarge}`);
         console.log(`Extract partial content: ${!noPartial}`);
         console.log(`Max pages: ${maxPages}`);
-        const batchEnabled = batch && !noBatch;
         console.log(`Batch processing: ${batchEnabled ? 'enabled' : 'disabled'}`);
         if (batchEnabled) {
           console.log(`Batch size: ${batchSize}`);
@@ -156,7 +201,7 @@ program
         verbose,
         forceFullRebuild: force,
         maxFileSizeMB: parseInt(maxFileSize, 10),
-        maxMemoryUsageMB: parseMemoryValue(maxMemory),
+        maxMemoryUsageMB: memoryLimitMB,
         skipLargeFiles: !noSkipLarge,
         extractPartialContent: !noPartial,
         maxPages: parseInt(maxPages, 10),

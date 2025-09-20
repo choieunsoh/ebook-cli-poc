@@ -10,6 +10,31 @@ import { IndexMetadata, SearchDocument, SearchIndex, SearchResult } from './sear
 import { extractTextFromFile, TextExtractionOptions } from './textExtractor';
 import { tokenizeForIndexing, tokenizeQuery } from './tokenizer';
 
+/**
+ * Memory monitoring utilities
+ */
+function getMemoryUsage() {
+  const memUsage = process.memoryUsage();
+  return {
+    heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
+    heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
+    external: Math.round(memUsage.external / 1024 / 1024),
+    rss: Math.round(memUsage.rss / 1024 / 1024),
+  };
+}
+
+function forceGarbageCollection() {
+  if (global.gc) {
+    global.gc();
+  }
+}
+
+function isMemoryUsageHigh(maxMemoryUsageMB: number): boolean {
+  const usage = getMemoryUsage();
+  const totalUsed = usage.heapUsed + usage.external;
+  return totalUsed > maxMemoryUsageMB * 0.8; // 80% threshold
+}
+
 export interface SearchOptions {
   indexFile?: string;
   limit?: number;
@@ -391,7 +416,33 @@ export class EbookSearch {
     const documentCount = this.index.getDocumentCount();
     let indexSize = 0;
 
-    if (fs.existsSync(this.indexFilePath)) {
+    // Check for split-file system first
+    const basePath = this.indexFilePath.replace(/\.[^/.]+$/, '');
+    const extension = this.indexFilePath.match(/\.[^/.]+$/)?.[0] || '.json';
+    const baseFileName = basePath.split('/').pop() || basePath.split('\\').pop() || 'search-index';
+    const indexDir = 'search-indexes';
+    const manifestFile = `${indexDir}/${baseFileName}.manifest${extension}`;
+
+    if (fs.existsSync(manifestFile)) {
+      // Calculate total size of all split files
+      try {
+        const files = fs.readdirSync(indexDir);
+        const indexFiles = files.filter((file) => file.startsWith(baseFileName) && file.endsWith(extension));
+
+        for (const file of indexFiles) {
+          try {
+            const filePath = path.join(indexDir, file);
+            const stats = fs.statSync(filePath);
+            indexSize += stats.size;
+          } catch {
+            // Ignore individual file errors
+          }
+        }
+      } catch {
+        // Ignore directory read errors
+      }
+    } else if (fs.existsSync(this.indexFilePath)) {
+      // Fallback to single file
       try {
         const stats = fs.statSync(this.indexFilePath);
         indexSize = stats.size;
@@ -926,7 +977,6 @@ export class EbookSearch {
     // Combine all changed entries for batch processing
     const changedEntries = [...changes.added, ...changes.modified];
     const batchGenerator = this.createBatchGenerator(changedEntries, batchSize);
-    const batchIndexes: SearchIndex[] = []; // Store batch indexes in memory
     let totalProcessed = 0;
     let totalFailed = 0;
     const allFailedFiles: Array<{ path: string; error: string }> = [];
@@ -935,8 +985,17 @@ export class EbookSearch {
 
     for (const batch of batchGenerator) {
       batchIndex++;
+
+      // Check memory usage before processing batch
+      if (isMemoryUsageHigh(extractionOptions.maxMemoryUsageMB || 4096)) {
+        console.warn(`Warning: Memory usage is high before batch ${batchIndex}. Forcing garbage collection...`);
+        forceGarbageCollection();
+      }
+
       if (verbose) {
         console.log(`Processing batch ${batchIndex} (${batch.length} files)`);
+        const memUsage = getMemoryUsage();
+        console.log(`  Pre-batch memory: ${memUsage.heapUsed}MB heap, ${memUsage.external}MB external`);
       }
 
       // Create a temporary index for this batch
@@ -996,35 +1055,32 @@ export class EbookSearch {
         }
       }
 
-      // Add documents to batch index and store in memory
+      // Add documents to batch index
       await batchIndexInstance.addDocumentsBatch(batchDocuments, batchFullTexts);
-      batchIndexes.push(batchIndexInstance);
 
       if (verbose) {
         console.log(`  Batch ${batchIndex} completed: ${batchDocuments.length} documents`);
       }
-    }
 
-    // Merge all batch indexes into the main index
-    if (verbose) {
-      console.log(`Merging ${batchIndexes.length} batch indexes...`);
-    }
+      // Merge this batch immediately to avoid memory accumulation
+      const docCount = batchIndexInstance.getDocumentCount();
+      this.index.mergeIndex(batchIndexInstance);
 
-    for (const batchIndex of batchIndexes) {
       if (verbose) {
-        console.log(`Merging batch`);
+        console.log(`  Merged batch ${batchIndex} into main index (${docCount} documents)`);
       }
 
-      const docCount = batchIndex.getDocumentCount();
-      if (verbose) {
-        console.log(`  Batch has ${docCount} documents`);
-      }
+      // Clear the batch index from memory immediately
+      batchIndexInstance.clear();
 
-      // Merge the complete index (documents + inverted index) into the main index
-      this.index.mergeIndex(batchIndex);
+      // Force garbage collection and monitor memory
+      forceGarbageCollection();
 
       if (verbose) {
-        console.log(`  Merged ${docCount} documents`);
+        const memUsage = getMemoryUsage();
+        console.log(
+          `  Memory usage: ${memUsage.heapUsed}MB heap, ${memUsage.external}MB external, ${memUsage.rss}MB RSS`,
+        );
       }
     }
 
@@ -1090,7 +1146,6 @@ export class EbookSearch {
     }
 
     const batchGenerator = this.createBatchGenerator(limitedEntries, batchSize);
-    const batchIndexes: SearchIndex[] = []; // Store batch indexes in memory
     let totalProcessed = 0;
     let totalFailed = 0;
     const allFailedFiles: Array<{ path: string; error: string }> = [];
@@ -1099,8 +1154,17 @@ export class EbookSearch {
 
     for (const batch of batchGenerator) {
       batchIndex++;
+
+      // Check memory usage before processing batch
+      if (isMemoryUsageHigh(extractionOptions.maxMemoryUsageMB || 4096)) {
+        console.warn(`Warning: Memory usage is high before batch ${batchIndex}. Forcing garbage collection...`);
+        forceGarbageCollection();
+      }
+
       if (verbose) {
         console.log(`Processing batch ${batchIndex} (${batch.length} files)`);
+        const memUsage = getMemoryUsage();
+        console.log(`  Pre-batch memory: ${memUsage.heapUsed}MB heap, ${memUsage.external}MB external`);
       }
 
       // Create a temporary index for this batch
@@ -1160,21 +1224,42 @@ export class EbookSearch {
         }
       }
 
-      // Add documents to batch index and store in memory
+      // Add documents to batch index
       await batchIndexInstance.addDocumentsBatch(batchDocuments, batchFullTexts);
-      batchIndexes.push(batchIndexInstance);
 
       if (verbose) {
         console.log(`  Batch ${batchIndex} completed: ${batchDocuments.length} documents`);
       }
-    }
 
-    // Merge all batch indexes in memory
-    if (verbose) {
-      console.log(`Merging ${batchIndexes.length} batch indexes...`);
-    }
+      // Merge this batch immediately to avoid memory accumulation
+      if (batchIndex === 1) {
+        // First batch - initialize the main index
+        this.index.clear();
+        this.index.mergeIndex(batchIndexInstance);
+        if (verbose) {
+          console.log(`  Initialized index with first batch (${batchDocuments.length} documents)`);
+        }
+      } else {
+        // Subsequent batches - merge into main index
+        this.index.mergeIndex(batchIndexInstance);
+        if (verbose) {
+          console.log(`  Merged batch ${batchIndex} into main index (${batchDocuments.length} documents)`);
+        }
+      }
 
-    await this.mergeBatchIndexesInMemory(batchIndexes, verbose);
+      // Clear the batch index from memory immediately
+      batchIndexInstance.clear();
+
+      // Force garbage collection and monitor memory
+      forceGarbageCollection();
+
+      if (verbose) {
+        const memUsage = getMemoryUsage();
+        console.log(
+          `  Memory usage: ${memUsage.heapUsed}MB heap, ${memUsage.external}MB external, ${memUsage.rss}MB RSS`,
+        );
+      }
+    }
 
     // Update metadata
     this.index.updateMetadata(dataFileContent.hash);
@@ -1240,34 +1325,6 @@ export class EbookSearch {
         }
       } catch (error) {
         console.error(`Failed to merge batch ${batchFile}:`, error);
-      }
-    }
-  }
-
-  /**
-   * Merges multiple batch indexes in memory into the main index
-   */
-  private async mergeBatchIndexesInMemory(batchIndexes: SearchIndex[], verbose: boolean): Promise<void> {
-    // Clear the main index
-    this.index.clear();
-
-    for (let i = 0; i < batchIndexes.length; i++) {
-      const batchIndex = batchIndexes[i];
-      if (verbose) {
-        console.log(`Merging batch ${i + 1}`);
-      }
-
-      const docCount = batchIndex.getDocumentCount();
-      if (verbose) {
-        console.log(`  Batch has ${docCount} documents`);
-        console.log(`  Inverted index has ${batchIndex['invertedIndex'].size} terms`);
-      }
-
-      // Merge the complete index (documents + inverted index) into the main index
-      this.index.mergeIndex(batchIndex);
-
-      if (verbose) {
-        console.log(`  Merged ${docCount} documents`);
       }
     }
   }
